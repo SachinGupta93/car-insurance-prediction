@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
-import { devError } from '@/utils/devHelper';
+'use client';
 
-const LoginForm: React.FC = () => {
+import { useState, FormEvent, ChangeEvent } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+import Link from 'next/link';
+
+export default function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -12,10 +16,10 @@ const LoginForm: React.FC = () => {
   const [resetEmail, setResetEmail] = useState('');
   
   const { signIn, signInWithGoogle, forgotPassword, error, setError } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
 
   // Clear any existing errors when form changes
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (error) setError(null);
     
@@ -24,15 +28,15 @@ const LoginForm: React.FC = () => {
     else if (name === 'resetEmail') setResetEmail(value);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
     try {
       await signIn(email, password);
-      navigate('/dashboard');
+      router.push('/dashboard');
     } catch (err) {
-      devError('Login Error', err);
+      console.error('Login Error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -43,15 +47,15 @@ const LoginForm: React.FC = () => {
     
     try {
       await signInWithGoogle();
-      navigate('/dashboard');
+      router.push('/dashboard');
     } catch (err) {
-      devError('Google Sign-in Error', err);
+      console.error('Google Sign-in Error:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
@@ -59,7 +63,7 @@ const LoginForm: React.FC = () => {
       await forgotPassword(resetEmail);
       setResetEmailSent(true);
     } catch (err) {
-      devError('Password Reset Error', err);
+      console.error('Password Reset Error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -76,7 +80,7 @@ const LoginForm: React.FC = () => {
           <p className="mt-2 text-center text-sm text-gray-600">
             New to our platform?{' '}
             <Link 
-              to="/signup" 
+              href="/signup" 
               className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
             >
               Create an account
@@ -303,6 +307,4 @@ const LoginForm: React.FC = () => {
       </div>
     </div>
   );
-};
-
-export default LoginForm;
+}
