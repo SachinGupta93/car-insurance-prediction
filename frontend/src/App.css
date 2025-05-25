@@ -1,0 +1,32 @@
+/* Add styles specific to your App component here */
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+  margin-bottom: 2rem;
+}
+
+.App-header h1 {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+main {
+  padding: 0 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+footer {
+  margin-top: 4rem;
+  padding: 1rem;
+  background-color: #f8f9fa; /* Light footer background */
+  border-top: 1px solid #e7e7e7;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
