@@ -1,54 +1,134 @@
-# Car Damage Prediction
+# 🚗 Car Damage Prediction & Insurance Analysis
 
-A sophisticated web application that uses Google's Gemini AI to analyze car damage from uploaded images and provide comprehensive damage assessments, repair recommendations, and insurance guidance.
+A comprehensive web application that leverages Google's Gemini AI to analyze car damage from uploaded images, providing detailed assessments, repair recommendations, and insurance guidance with modern interactive dashboards.
 
-## Features
+## ✨ Features
 
-- User authentication with Firebase
-- User authentication with Firebase
-- Upload car images for professional damage analysis through Gemini AI
-- Real-time image preview with beautiful UI
-- Detailed damage assessment with severity classification
-- Comprehensive insurance recommendations and coverage analysis
-- Vehicle information retrieval with specifications
-- Repair cost estimates with breakdown
-- Safety implications assessment
-- Repair timeline estimates
-- RAG-based Q&A system for car damage queries
-- RAG-based Q&A system for car damage queries
+### 🔍 **AI-Powered Analysis**
+- Advanced car damage detection using Google Gemini 1.5 Flash
+- Detailed damage severity classification (Minor/Moderate/Severe/Critical)
+- Comprehensive repair recommendations with cost estimates
+- Safety and compliance assessments
 
-## Setup
+### 📊 **Interactive Dashboards**
+- Modern dashboard with real-time charts and metrics
+- Multiple chart types: Bar, Area, Line, and Pie charts
+- Insurance company comparison and performance tracking
+- Claims processing analytics and approval rates
+
+### 🏢 **Insurance Integration**
+- Comprehensive insurance analysis system
+- Real-time claims tracking and status updates
+- Insurance company comparison with success rates
+- Coverage recommendations by vehicle type
+
+### 🚙 **Vehicle Database**
+- Searchable car models database with insurance ratings
+- Repair cost estimates by make and model
+- Market values and common damage types
+- Insurance company partnerships and specialties
+
+### 🎨 **Modern UI/UX**
+- Responsive design with automotive-inspired color palette
+- Drag-and-drop image upload with auto-analysis
+- Mobile-optimized interface
+- Enhanced loading states and smooth animations
+
+### 🔐 **Authentication & Security**
+- Firebase Authentication integration
+- Protected routes and user sessions
+- Secure API endpoints with proper validation
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **React 18** with TypeScript
+- **Vite** for fast development and building
+- **Tailwind CSS** with custom design system
+- **Recharts** for data visualization
+- **Lucide React** for modern icons
+- **React Router** for navigation
+- **Firebase** for authentication
+
+### Backend
+- **Python Flask** REST API
+- **Google Gemini 1.5 Flash** for AI analysis
+- **ChromaDB** for vector storage and RAG
+- **Firebase Admin SDK** for user management
+- **PIL** for image processing
+
+## 🚀 Quick Start
 
 ### Prerequisites
+- **Node.js** (v18+)
+- **Python** (v3.11+)
+- **Firebase Account** with project setup
+- **Google Gemini API Key**
 
-- Node.js (v14+)
-- Python (v3.8+)
-- Firebase account
-- Google Gemini API key
+### 1. Clone and Install Dependencies
 
-### Environment Variables
+```bash
+# Install frontend dependencies
+cd frontend
+npm install
 
-Create a `.env` file in the root directory with the following variables:
-
+# Install backend dependencies
+cd ../backend
+pip install -r requirements.txt
 ```
+
+### 2. Environment Configuration
+
+Create `.env` files in both root and backend directories:
+
+**Root `.env`:**
+```env
 # Firebase Configuration
 FIREBASE_API_KEY=your_firebase_api_key
-FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
-FIREBASE_PROJECT_ID=your_firebase_project_id
-FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
-FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
-FIREBASE_APP_ID=your_firebase_app_id
-FIREBASE_MEASUREMENT_ID=your_firebase_measurement_id
-FIREBASE_DATABASE_URL=your_firebase_database_url
+FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+FIREBASE_APP_ID=your_app_id
 
-# Gemini API Configuration
+# Gemini API
 GEMINI_API_KEY=your_gemini_api_key
+```
 
+**Backend `.env`:**
+```env
 # Flask Configuration
 FLASK_ENV=development
 FLASK_DEBUG=True
-FLASK_APP=backend/main.py
 PORT=8000
+
+# Gemini API
+GEMINI_API_KEY=your_gemini_api_key
+
+# Firebase (same as root)
+FIREBASE_PROJECT_ID=your_project_id
+```
+
+### 3. Firebase Setup
+
+1. Place your `service-account.json` file in the root directory
+2. Configure Firebase rules using the provided `firebase.rules`
+
+### 4. Start Development Servers
+
+```bash
+# Terminal 1: Start Backend (from root)
+.\run-backend.ps1
+
+# Terminal 2: Start Frontend (from root)  
+.\run-frontend.ps1
+```
+
+### 5. Access Application
+
+- **Frontend**: http://localhost:5174
+- **Backend API**: http://localhost:8000
+- **API Health**: http://localhost:8000/api/health
 ```
 
 Create a `.env.local` file in the `frontend` directory with the following variables:

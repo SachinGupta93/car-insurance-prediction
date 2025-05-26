@@ -2,7 +2,8 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone, FileWithPath } from 'react-dropzone';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 import { useHistory } from '@/context/HistoryContext';
-import { ApiResponse, DamageResult } from '@/types';
+import { useNotificationHelpers } from '@/context/NotificationContext';
+import { DamageResult } from '@/types';
 import DamageAnalyzer from './damage/DamageAnalyzer';
 
 interface ImageUploadProps {
@@ -12,6 +13,7 @@ interface ImageUploadProps {
 const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const { firebaseUser, loadingAuth } = useFirebaseAuth();
   const { addAnalysisToHistory } = useHistory();
+  const { success, error: notifyError } = useNotificationHelpers();
 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,246 +22,294 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Ref to abort controller for cancelling upload
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Cleanup preview URL on unmount or when preview changes
   useEffect(() => {
+    const currentPreview = preview; // Capture current preview for cleanup
+    // Cleanup preview URL on unmount or when preview changes
     return () => {
-      if (preview) {
-        URL.revokeObjectURL(preview);
+      if (currentPreview) {
+        URL.revokeObjectURL(currentPreview);
       }
     };
-  }, [preview]);  const onDrop = useCallback(async (acceptedFiles: FileWithPath[]) => {
+  }, [preview]);
+
+  const onDrop = useCallback(async (acceptedFiles: FileWithPath[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
     if (!firebaseUser && !loadingAuth) {
       setError('You must be logged in to upload images.');
+      notifyError('Authentication Required', 'Please log in to upload and analyze images.');
       return;
     }
 
-    // Create a preview
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    if (!validTypes.includes(file.type)) {
+      setError('Invalid file type. Please upload a JPG, JPEG, or PNG image.');
+      notifyError('Invalid File Type', 'Please upload a JPG, JPEG, or PNG image.');
+      return;
+    }
+
+    // Validate file size (10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+    if (file.size > maxSize) {
+      setError('File size too large. Maximum size is 10MB.');
+      notifyError('File Too Large', 'Please upload an image smaller than 10MB.');
+      return;
+    }
+
+    // Revoke old preview URL if one exists
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
     const previewUrl = URL.createObjectURL(file);
     setPreview(previewUrl);
     setSelectedFile(file);
     setError(null);
     setAnalysisResult(null);
-    
-  }, [firebaseUser, loadingAuth]);
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    setUploading(false);
+    setProgress(0);
+
+    success('Image Uploaded', 'Image ready for analysis. Click "Analyze Image" to start.');
+  }, [firebaseUser, loadingAuth, success, notifyError, preview]);  const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.jpeg', '.jpg', '.png'] },
+    accept: {
+      'image/jpeg': ['.jpeg', '.jpg'],
+      'image/png': ['.png']
+    },
     maxFiles: 1,
     maxSize: 10 * 1024 * 1024, // 10MB
-    disabled: uploading || loadingAuth || !firebaseUser,
+    disabled: uploading || loadingAuth,
+    noClick: false,
+    noKeyboard: false,
+    multiple: false
   });
 
   const handleCancelUpload = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null; // Fix 3a: Clear the ref after aborting.
     }
     setUploading(false);
-    setError('Upload cancelled.');
-    setPreview(null);
+    setError('Analysis cancelled.'); // More accurate message
+    setPreview(null); // This will trigger the useEffect to revoke the object URL.
     setSelectedFile(null);
-    if (preview) URL.revokeObjectURL(preview);
+    setAnalysisResult(null); // Also clear analysisResult on cancel
     setProgress(0);
   };
-  
+
   const handleRemovePreview = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
-    setPreview(null);
+    setPreview(null); // useEffect will handle revokeObjectURL
     setSelectedFile(null);
     setError(null);
     setAnalysisResult(null);
+    // No need to cancel upload here, as this button is shown when !uploading
   };
 
-  const handleAnalysisComplete = (result: DamageResult) => {
+  // This function is called by DamageAnalyzer when it *actually* begins its process.
+  const handleAnalysisStart = () => {
+    // The abortController should have been created by the action that initiated the analysis (e.g., button click)
+    setUploading(true); // Confirm uploading state
+    setProgress(0);     // Reset progress
+    setError(null);     // Clear previous errors
+  };
+  const handleAnalysisComplete = async (result: DamageResult) => { // Make async
     setAnalysisResult(result);
-    if (onImageUploaded && preview) {
-      onImageUploaded(preview, result);
+    setUploading(false);
+    setProgress(100);
+    success('Analysis Complete', `Successfully analyzed damage with ${(result.confidence * 100).toFixed(1)}% confidence`);
+
+    // Convert file to Base64 for history
+    let imageBase64 = preview || ''; // Fallback to blob if conversion fails, though not ideal
+    if (selectedFile) {
+      try {
+        imageBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(selectedFile);
+        });
+      } catch (error) {
+        console.error("Error converting image to Base64 for history:", error);
+        notifyError("History Save Error", "Could not save image preview to history.");
+        // imageBase64 will remain the blob URL as a fallback
+      }
+    }
+
+    if (onImageUploaded && imageBase64) { // Use imageBase64 if available
+      onImageUploaded(imageBase64, result);
+    }
+
+    // Add to history
+    if (addAnalysisToHistory && selectedFile) { // selectedFile check is still relevant
+      addAnalysisToHistory({
+        imageUrl: imageBase64, // Use Base64 string
+        damageDescription: result.damageDescription || result.description,
+        repairEstimate: result.enhancedRepairCost?.conservative?.rupees || 'Not available',
+        damageType: result.damageType,
+        confidence: result.confidence,
+        description: result.description,
+        recommendations: result.recommendations || [],
+        severity: result.confidence > 0.8 ? 'severe' : result.confidence > 0.6 ? 'moderate' : 'minor'
+      }).catch((error) => {
+        console.error('Failed to save analysis to history:', error);
+        // Don't show error to user as the analysis was successful
+      });
     }
   };
 
   const handleAnalysisError = (errorMessage: string) => {
     setError(errorMessage);
+    setUploading(false);
+    setProgress(0);
+    notifyError('Analysis Failed', errorMessage);
   };
 
-  const handleAnalysisStart = () => {
+  // Fix 3b: Logic for starting analysis, now explicitly triggered by the button
+  const handleInitiateAnalysis = () => {
+    if (!selectedFile) {
+      setError('No image selected for analysis');
+      return;
+    }
+
+    if (!firebaseUser) {
+      setError('You must be logged in to analyze images');
+      return;
+    }
+
+    abortControllerRef.current = new AbortController();
     setUploading(true);
     setProgress(0);
+    setError(null);
+  };
+
+  const handleBackFromAnalyzer = () => {
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+    setPreview(null);
+    setSelectedFile(null);
+    setAnalysisResult(null);
+    setError(null);
+    setUploading(false); // Ensure uploading state is reset
+    setProgress(0);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
   };
 
   return (
-    <div className="bg-white shadow-xl sm:rounded-lg transition-all duration-300 ease-in-out hover:shadow-2xl">
-      <div className="px-4 py-5 sm:p-6">
-        <h3 className="text-xl font-semibold leading-7 text-gray-900 mb-1">
-          Upload & Analyze Car Image
-        </h3>
-        <p className="text-sm text-gray-500 mb-6">
-          Get an AI-powered damage assessment. Supports JPG, PNG, JPEG up to 10MB.
-        </p>        {!firebaseUser && !loadingAuth && (
-          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-700">
-            Please log in to upload and analyze images.
-          </div>
-        )}
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background elements */}
+      <div className="absolute inset-0 bg-white">
+        <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+        <div className="absolute inset-0 bg-rose-50 opacity-30"></div>
+      </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600 transition-opacity duration-300">
-            <div className="flex">
-              <svg className="h-5 w-5 text-red-400 mr-2 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <span>{error}</span>
-            </div>
-          </div>
-        )}
-
-        {preview && !uploading && !error && !analysisResult && (
-           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-700 transition-opacity duration-300">
-            Image ready for analysis. Click "Analyze Now" or drop a new image to replace.
-          </div>
-        )}
-
-        <div className="mt-2">
-          {!preview ? (            <div
-              {...getRootProps()}
-              className={`flex flex-col justify-center items-center px-6 py-10 border-2 border-dashed rounded-lg transition-all duration-200 ease-in-out
-                ${isDragActive ? 'border-indigo-600 bg-indigo-50 scale-105' : 'border-gray-300 hover:border-gray-400'}
-                ${(uploading || loadingAuth || !firebaseUser) ? 'opacity-60 cursor-not-allowed bg-gray-50' : 'cursor-pointer hover:bg-gray-50'}`}
-            >
-              <input {...getInputProps()} />
-              <svg className="mx-auto h-12 w-12 text-gray-400 mb-2" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span className="mt-2 block text-sm font-medium text-gray-900">
-                {isDragActive ? 'Drop the image here ...' : 'Drag & drop an image, or click to select'}
-              </span>
-              <p className="text-xs text-gray-500">PNG, JPG, JPEG up to 10MB</p>
-            </div>
-          ) : (
-            <div className="mb-4 text-center">
-              <div className="relative inline-block group">
-                <img 
-                  src={preview} 
-                  alt="Preview" 
-                  className="max-h-72 mx-auto rounded-lg shadow-lg border border-gray-200 transition-all duration-300 ease-in-out group-hover:shadow-xl" 
-                />
-                {!uploading && (
-                  <button
-                    onClick={handleRemovePreview}
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all duration-200 ease-in-out transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                    aria-label="Remove image"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+      <div className="relative z-10 min-h-screen flex items-center justify-center py-12 px-4">
+        <div className="w-full max-w-4xl">
+          <div className="bg-white/90 backdrop-blur-lg rounded-2xl p-8 shadow-xl border border-rose-200">
+            {/* 
+              Main conditional rendering:
+              - If 'uploading' is true (analysis in progress) OR 
+              - if 'analysisResult' is present (analysis complete) AND 
+              - 'selectedFile' is not null:
+                Show DamageAnalyzer.
+              - Otherwise:
+                Show the image upload interface.
+            */}
+            { (uploading || analysisResult) && selectedFile ? (
+              <DamageAnalyzer
+                imageFile={selectedFile}
+                onAnalysisStart={handleAnalysisStart} // Callback when DA starts its async task
+                onAnalysisComplete={handleAnalysisComplete} // Callback for successful analysis
+                onAnalysisError={handleAnalysisError} // Callback for analysis error
+                onBack={handleBackFromAnalyzer} // Callback to go back to upload UI
+                isAnalyzing={uploading} // Pass the 'uploading' state to DA
+                abortSignal={abortControllerRef.current?.signal} // For aborting analysis
+              />
+            ) : (
+              // Upload Interface
+              <>
+                <div className="text-center mb-8">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-200 mb-4">
+                    <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                  </button>
+                  </div>
+                  <h1 className="text-3xl font-bold text-black mb-2">
+                    AI Car Damage Analyzer
+                  </h1>
+                  <p className="text-lg text-gray-600">
+                    Upload an image of your car to get an instant damage analysis and repair estimate.
+                  </p>
+                </div>
+
+                {/* Dropzone */}
+                <div
+                  {...getRootProps()}
+                  className={`mt-6 p-8 border-2 border-dashed rounded-xl text-center cursor-pointer transition-colors duration-200 ease-in-out 
+                    ${isDragActive ? 'border-rose-500 bg-rose-50' : 'border-gray-300 hover:border-gray-400'}
+                    ${isDragReject ? 'border-red-500 bg-red-50' : ''}
+                    ${(uploading || loadingAuth) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <input {...getInputProps()} />
+                  {preview && selectedFile ? (
+                    <div className="relative group">
+                      <img src={preview} alt="Preview" className="max-h-60 w-auto mx-auto rounded-lg shadow-md" />
+                      <button
+                        onClick={handleRemovePreview}
+                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
+                        aria-label="Remove image"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    isDragActive ?
+                      <p className="text-rose-600">Drop the image here ...</p> :
+                      <p className="text-gray-500">Drag 'n' drop an image here, or click to select image</p>
+                  )}
+                </div>
+
+                {error && (
+                  <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm">
+                    {error}
+                  </div>
                 )}
-              </div>
-            </div>
-          )}
 
-          {uploading && (
-            <div className="mt-4">
-              <div className="flex justify-between mb-1">
-                <span className="text-sm font-medium text-indigo-700">Analyzing image...</span>
-                <span className="text-sm font-medium text-indigo-700">{progress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div 
-                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300 ease-out" 
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-              <button
-                onClick={handleCancelUpload}
-                className="mt-3 w-full px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
-              >
-                Cancel Upload
-              </button>
-            </div>
-          )}        {!uploading && preview && !analysisResult && !error && (
-            <button              onClick={() => {
-                if (selectedFile) {
-                  setUploading(true);
-                  // When clicked, we'll pass the selectedFile to the DamageAnalyzer
-                  // by updating the state which will trigger the useEffect in DamageAnalyzer
-                }
-              }}
-              disabled={!selectedFile || loadingAuth || !firebaseUser}
-              className="mt-4 w-full px-4 py-2.5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors disabled:opacity-50"
-            >
-              Analyze Image
-            </button>
-          )}
-        </div>
-
-        {/* Damage Analyzer Component */}
-        {selectedFile && (
-          <DamageAnalyzer 
-            imageFile={uploading ? selectedFile : null}
-            onAnalysisComplete={handleAnalysisComplete}
-            onAnalysisError={handleAnalysisError}
-            onAnalysisStart={handleAnalysisStart}
-          />
-        )}
-
-        {analysisResult && !uploading && (
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200 animate-fadeIn">
-            <h4 className="text-md font-semibold text-gray-800 mb-2">Analysis Complete:</h4>
-            
-            <div className="mb-4">
-              <p className="text-sm font-medium text-gray-700">Damage Type: <span className="font-bold text-gray-900">{analysisResult.damageType}</span></p>
-              <p className="text-sm font-medium text-gray-700">Confidence: <span className="font-bold text-gray-900">{(analysisResult.confidence * 100).toFixed(2)}%</span></p>
-              {analysisResult.repairEstimate && (
-                <p className="text-sm font-medium text-gray-700">Estimated Repair Cost: <span className="font-bold text-gray-900">{analysisResult.repairEstimate}</span></p>
-              )}
-            </div>
-            
-            {analysisResult.recommendations && analysisResult.recommendations.length > 0 && (
-              <div className="mb-4">
-                <h5 className="text-sm font-semibold text-gray-800 mb-1">Recommendations:</h5>
-                <ul className="list-disc list-inside text-sm text-gray-600">
-                  {analysisResult.recommendations.map((rec, index) => (
-                    <li key={index}>{rec}</li>
-                  ))}
-                </ul>
-              </div>
+                {uploading && (
+                  <div className="mt-4 w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-gradient-to-r from-rose-500 to-pink-500 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
+                  </div>
+                )}
+                
+                {/* "Analyze Image" button - shown only when an image is selected and ready for analysis */}
+                {preview && selectedFile && !uploading && !analysisResult && (
+                  <div className="mt-6 text-center">
+                    <button
+                      onClick={handleInitiateAnalysis}
+                      disabled={loadingAuth || !firebaseUser}
+                      className="w-full bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Analyze Image
+                    </button>
+                  </div>
+                )}
+              </>
             )}
-            
-            <button
-              onClick={() => {
-                setPreview(null);
-                setSelectedFile(null);
-                setAnalysisResult(null);
-                setError(null);
-                if(preview) URL.revokeObjectURL(preview);
-              }}
-              className="mt-4 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
-            >
-              Upload Another Image
-            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 };
 
 export default ImageUpload;
-
-// Basic CSS for fadeIn animation (add to your global CSS or a relevant stylesheet)
-/*
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fadeIn {
-  animation: fadeIn 0.5s ease-out forwards;
-}
-*/

@@ -1,13 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-
-interface DamageRegion {
-  x: number; // x-coordinate as percentage of image width
-  y: number; // y-coordinate as percentage of image height
-  width: number; // width as percentage of image width
-  height: number; // height as percentage of image height
-  damageType: string;
-  confidence: number;
-}
+import { DamageRegion } from '@/types'; // Import DamageRegion from types
 
 interface AnalysisVisualizationProps {
   imageUrl: string;
@@ -20,7 +12,7 @@ const AnalysisVisualization: React.FC<AnalysisVisualizationProps> = ({
   imageUrl,
   damageRegions = [],
   showOverlay = true,
-  highlightColor = 'rgba(255, 0, 0, 0.3)'
+  highlightColor = 'rgba(239, 68, 68, 0.3)'
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -71,28 +63,28 @@ const AnalysisVisualization: React.FC<AnalysisVisualizationProps> = ({
         const y = (region.y / 100) * canvasHeight;
         const width = (region.width / 100) * canvasWidth;
         const height = (region.height / 100) * canvasHeight;
-        
-        // Draw rectangle
+          // Draw rectangle
         ctx.fillStyle = highlightColor;
         ctx.fillRect(x, y, width, height);
         
         // Draw border
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; // Modern red
+        ctx.lineWidth = 3;
         ctx.strokeRect(x, y, width, height);
         
-        // Draw label
-        ctx.fillStyle = 'white';
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 3;
-        ctx.font = '14px sans-serif';
-        
+        // Prepare label text
         const label = `${region.damageType} (${Math.round(region.confidence * 100)}%)`;
         
-        // Draw text stroke for better readability
-        ctx.strokeText(label, x, y - 5);
+        // Draw label background
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; // Dark background
+        ctx.fillRect(x, y - 25, ctx.measureText(label).width + 12, 20);
+        
+        // Draw label text
+        ctx.fillStyle = '#f1f5f9'; // Light text
+        ctx.font = 'bold 12px Inter, sans-serif';
+        
         // Draw actual text
-        ctx.fillText(label, x, y - 5);
+        ctx.fillText(label, x + 6, y - 8);
       });
     }
   };
@@ -136,24 +128,23 @@ const AnalysisVisualization: React.FC<AnalysisVisualizationProps> = ({
       window.removeEventListener('resize', handleResize);
     };
   }, []);
-
   return (
-    <div className="relative" ref={containerRef} style={{ width: '100%', height: '100%', minHeight: '300px' }}>
+    <div className="relative bg-white/10 backdrop-blur-lg p-4 rounded-xl border border-rose-200/30 shadow-sm" ref={containerRef} style={{ width: '100%', height: '100%', minHeight: '300px' }}>
       <canvas 
         ref={canvasRef}
-        className="max-w-full h-auto"
+        className="max-w-full h-auto rounded-xl"
       />
       
       {damageRegions.length > 0 && (
-        <div className="absolute bottom-2 right-2 bg-white px-3 py-1 rounded shadow text-sm">
-          <label className="flex items-center cursor-pointer">
+        <div className="absolute bottom-6 right-6 bg-white/10 backdrop-blur-lg px-4 py-2 rounded-lg border border-rose-200/30">
+          <label className="flex items-center cursor-pointer text-black">
             <input 
               type="checkbox" 
               checked={showOverlay} 
               onChange={() => {}} // This would typically be handled by a parent component
-              className="mr-1"
+              className="mr-2 accent-emerald-200"
             />
-            Show damage overlay
+            <span className="text-sm">Show damage overlay</span>
           </label>
         </div>
       )}

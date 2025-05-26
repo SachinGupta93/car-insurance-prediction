@@ -40,14 +40,50 @@ def initialize_firebase():
                 # Initialize with service account if file exists
                 try:
                     logger.info(f"Attempting to initialize Firebase with service account: {service_account_path}")
-                    cred = firebase_admin.credentials.Certificate(service_account_path)
-                    firebase_admin.initialize_app(cred)
-                    logger.info(f"Firebase Admin SDK initialized successfully with service account")
+                    
+                    # Validate if the service account is a mock/test file
+                    with open(service_account_path, 'r') as f:
+                        import json
+                        service_data = json.load(f)
+                        
+                    # Check if this is a mock service account (common indicators)
+                    is_mock = (
+                        'mock' in service_data.get('client_email', '').lower() or
+                        'mock' in service_data.get('private_key_id', '').lower() or
+                        service_data.get('client_id') == '000000000000000000000'
+                    )
+                    
+                    if is_mock and dev_mode:
+                        logger.warning("DEV MODE: Mock service account detected, using emulator-friendly config")
+                        # For development with mock credentials, use minimal config
+                        firebase_admin.initialize_app(options={
+                            'projectId': service_data.get('project_id', 'dev-project')
+                        })
+                        logger.info("Firebase Admin SDK initialized with mock service account for development")
+                    elif is_mock and not dev_mode:
+                        logger.error("PRODUCTION: Mock service account detected, cannot initialize in production")
+                        raise ValueError("Mock service account file detected in production environment")
+                    else:
+                        # Real service account
+                        cred = firebase_admin.credentials.Certificate(service_account_path)
+                        firebase_admin.initialize_app(cred)
+                        logger.info(f"Firebase Admin SDK initialized successfully with service account")
+                        
+                except json.JSONDecodeError as json_error:
+                    logger.error(f"Invalid JSON in service account file: {str(json_error)}")
+                    if dev_mode:
+                        logger.warning("DEV MODE: Invalid service account JSON, using minimal config")
+                        firebase_admin.initialize_app(options={
+                            'projectId': os.getenv('FIREBASE_PROJECT_ID') or 'dev-project'
+                        })
+                        logger.info("Firebase Admin SDK initialized with minimal config for development")
+                    else:
+                        raise json_error
                 except Exception as cert_error:
                     logger.error(f"Failed to initialize with service account: {str(cert_error)}")
                     if dev_mode:
                         # In dev mode, create a dummy app with minimal config
-                        logger.warning("DEV MODE: Initializing Firebase with minimal config for development")
+                        logger.warning("DEV MODE: Service account failed, using minimal config for development")
                         firebase_admin.initialize_app(options={
                             'projectId': os.getenv('FIREBASE_PROJECT_ID') or 'dev-project'
                         })
@@ -61,7 +97,6 @@ def initialize_firebase():
                     # This will work in local development if FIREBASE_API_KEY is set in .env
                     logger.info("No service account found, trying environment variables")
                     firebase_admin.initialize_app(options={
-                        'apiKey': os.getenv('FIREBASE_API_KEY'),
                         'projectId': os.getenv('FIREBASE_PROJECT_ID') or 'dev-project'
                     })
                     logger.info("Firebase Admin SDK initialized with environment variables")

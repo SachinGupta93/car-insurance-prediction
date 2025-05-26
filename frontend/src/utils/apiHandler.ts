@@ -5,6 +5,7 @@ interface ApiCallOptions {
   headers?: Record<string, string>;
   body?: any; // Can be FormData, JSON string, etc.
   isFormData?: boolean;
+  signal?: AbortSignal;
 }
 
 interface ApiResponse<T> {
@@ -17,7 +18,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api
 
 /**
  * A generic function to handle API calls.
- * @param endpoint The API endpoint (e.g., '/users', '/analyze-damage').
+ * @param endpoint The API endpoint (e.g., '/users', '/analyze/upload', '/analyze').
  * @param options Configuration for the API call (method, headers, body).
  * @returns A promise that resolves to an ApiResponse object.
  */
@@ -25,11 +26,15 @@ export const apiHandler = async <T = any>(
   endpoint: string,
   options: ApiCallOptions = {}
 ): Promise<ApiResponse<T>> => {
-  const { method = 'GET', headers: customHeaders = {}, body, isFormData = false } = options;
-
+  const { method = 'GET', headers: customHeaders = {}, body, isFormData = false, signal } = options;
   const headers: Record<string, string> = {
     ...customHeaders,
   };
+
+  // Add development auth bypass header in development mode
+  if (import.meta.env.MODE === 'development') {
+    headers['X-Dev-Auth-Bypass'] = 'true';
+  }
 
   if (!isFormData && body) {
     headers['Content-Type'] = 'application/json';
@@ -51,12 +56,12 @@ export const apiHandler = async <T = any>(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       method,
       headers,
       body: isFormData ? body : (body ? JSON.stringify(body) : null),
+      signal, // Add abort signal support
     });
 
     if (!response.ok) {
