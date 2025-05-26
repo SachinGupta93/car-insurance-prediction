@@ -1,5 +1,25 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { 
+  FaSearch, 
+  FaFileAlt, 
+  FaWrench, 
+  FaBook, 
+  FaHeadset, 
+  FaTools, 
+  FaShieldAlt, 
+  FaExclamationTriangle, 
+  FaCar, 
+  FaCloudSun, 
+  FaPaw, 
+  FaFire, 
+  FaHammer,
+  FaArrowRight,
+  FaStar,
+  FaClock,
+  FaCalendar,
+  FaBookOpen
+} from 'react-icons/fa';
 
 interface Resource {
   id: string;
@@ -11,9 +31,32 @@ interface Resource {
 }
 
 const ResourcesPage: React.FC = () => {
+  const [activeSection, setActiveSection] = useState<string>('insurance');
+
+  // Handle hash navigation
+  useEffect(() => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash && categorizedResources[hash]) {
+      setActiveSection(hash);
+      const element = document.getElementById(hash);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, []);
+
+  const handleNavClick = (sectionId: string) => {
+    if (categorizedResources[sectionId]) {
+    setActiveSection(sectionId);
+    window.location.hash = sectionId;
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  };
   // Sample resources data
-  const resources: Resource[] = [
-    {
+  const resources: Resource[] = [    {
       id: '1',
       title: 'Understanding Insurance Claims',
       description: 'Learn about the car insurance claim process after damage occurs.',
@@ -62,20 +105,17 @@ const ResourcesPage: React.FC = () => {
       category: 'insurance',
     },
   ];
-
-  const getIconClass = (iconName: string): string => {
-    // This is a simple mapping function that you can expand
-    // Here we're just using a placeholder approach
-    const iconMap: Record<string, string> = {
-      document: '📄',
-      wrench: '🔧',
-      book: '📚',
-      headset: '🎧',
-      tools: '🧰',
-      shield: '🛡️',
+  const getIconClass = (iconName: string): JSX.Element => {
+    const iconMap: Record<string, JSX.Element> = {
+      document: <FaFileAlt className="text-blue-500" />,
+      wrench: <FaWrench className="text-orange-500" />,
+      book: <FaBook className="text-green-500" />,
+      headset: <FaHeadset className="text-purple-500" />,
+      tools: <FaTools className="text-yellow-500" />,
+      shield: <FaShieldAlt className="text-blue-600" />,
     };
     
-    return iconMap[iconName] || '📋'; // Default icon
+    return iconMap[iconName] || <FaFileAlt className="text-gray-500" />;
   };
 
   // Group resources by category
@@ -95,96 +135,139 @@ const ResourcesPage: React.FC = () => {
     support: 'Support',
   };
 
-  return (
-    <div className="bg-gray-50 min-h-screen p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-3xl font-bold text-gray-800">Resources</h1>
-          <p className="mt-2 text-gray-600">
-            Find helpful information about car damage, repairs, and insurance claims.
-          </p>
-        </div>
+  // Latest updates data
+  const latestUpdates = [
+    {
+      id: '1',
+      title: 'New Damage Analysis Features',
+      description: 'Added support for detecting paint damage and rust assessment',
+      date: '2024-03-15',
+      icon: FaCar
+    },
+    {
+      id: '2',
+      title: 'Insurance Integration Update',
+      description: 'Enhanced integration with major insurance providers',
+      date: '2024-03-10',
+      icon: FaShieldAlt
+    },
+    {
+      id: '3',
+      title: 'Mobile App Improvements',
+      description: 'New camera features for better damage documentation',
+      date: '2024-03-05',
+      icon: FaTools
+    }
+  ];
 
-        {/* Hero section with search (placeholder for now) */}
-        <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg p-8 mb-10 text-white shadow-lg">
-          <h2 className="text-xl font-semibold mb-4">Looking for something specific?</h2>
-          <div className="flex max-w-md mx-auto">
-            <input 
-              type="text" 
-              placeholder="Search resources..." 
-              className="w-full px-4 py-2 rounded-l-md text-gray-800 focus:outline-none"
-            />
-            <button className="bg-indigo-700 hover:bg-indigo-800 px-6 rounded-r-md transition-colors">
-              Search
-            </button>
+  return (
+    <div className="min-h-screen bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center mb-16">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="w-16 h-16 bg-rose-200 rounded-2xl flex items-center justify-center">
+              <FaBookOpen className="w-8 h-8 text-black" />
+            </div>
+            <h1 className="text-5xl font-bold text-black">
+              Resources & Guides
+            </h1>
           </div>
-        </div>
-        
-        {/* Resource categories */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+            Access our comprehensive collection of guides, tutorials, and resources to help you make the most of CarGuard AI.
+          </p>
+          </div>
+          
+          {/* Resource Categories */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
           {Object.entries(categorizedResources).map(([category, items]) => (
-            <div key={category} className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">
-                {categoryNames[category] || category}
-              </h2>
-              <div className="space-y-4">
-                {items.map((resource) => (
-                  <div key={resource.id} className="flex items-start">
-                    {resource.icon && (
-                      <div className="text-2xl mr-3">
-                        {getIconClass(resource.icon)}
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="font-medium text-gray-800">
-                        {resource.link ? (
-                          resource.link.startsWith('/') ? (
-                            <Link to={resource.link} className="text-blue-600 hover:text-blue-800">
-                              {resource.title}
-                            </Link>
-                          ) : (
-                            <a href={resource.link} className="text-blue-600 hover:text-blue-800">
-                              {resource.title}
-                            </a>
-                          )
-                        ) : (
-                          resource.title
-                        )}
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-1">{resource.description}</p>
-                    </div>
-                  </div>
-                ))}
+            <div
+              key={category}
+              className="bg-white rounded-xl border border-rose-200 p-6 hover:shadow-lg transition-all duration-300"
+            >
+              <div className="w-12 h-12 bg-rose-200/50 rounded-xl flex items-center justify-center mb-4">
+                {getIconClass(items[0]?.icon || 'document')}
               </div>
+              <h3 className="text-xl font-bold text-black mb-2">{categoryNames[category] || category}</h3>
+              <p className="text-gray-600 mb-4">{items[0]?.description || 'No description available'}</p>
+              <Link
+                to={`/resources/${category}`}
+                className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-medium"
+              >
+                Learn More
+                <FaArrowRight className="w-4 h-4 ml-2" />
+              </Link>
             </div>
           ))}
-        </div>
-        
-        {/* FAQ section */}
-        <div className="mt-12 bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">Frequently Asked Questions</h2>
+            </div>
+
+        {/* Featured Resources */}
+        <div className="bg-white rounded-xl border border-rose-200 p-8 mb-16">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-rose-200/50 rounded-xl flex items-center justify-center">
+              <FaStar className="w-6 h-6 text-black" />
+            </div>
+            <h2 className="text-2xl font-bold text-black">Featured Resources</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {categorizedResources[activeSection]?.map((resource) => (
+              <div
+                key={resource.id}
+                className="bg-white rounded-xl border border-rose-200 p-6 hover:shadow-lg transition-all duration-300"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-rose-200/50 rounded-lg flex items-center justify-center">
+                    {getIconClass(resource.icon || 'document')}
+                  </div>
+                  <h3 className="font-bold text-black">{resource.title}</h3>
+                </div>
+                <p className="text-gray-600 mb-4">{resource.description}</p>
+                {resource.link ? (
+                  <Link
+                    to={resource.link} // Now guaranteed to be a string if Link is rendered
+                    className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-medium"
+                  >
+                    Read More
+                    <FaArrowRight className="w-4 h-4 ml-2" />
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center text-gray-400 font-medium">
+                    More details soon
+                  </span>
+                )}
+                  </div>
+                ))}
+          </div>
+          </div>
+          
+        {/* Latest Updates */}
+        <div className="bg-white rounded-xl border border-rose-200 p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-rose-200/50 rounded-xl flex items-center justify-center">
+              <FaClock className="w-6 h-6 text-black" />
+            </div>
+            <h2 className="text-2xl font-bold text-black">Latest Updates</h2>
+          </div>
+          
           <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium text-gray-800">How accurate is the damage analysis?</h3>
-              <p className="mt-1 text-gray-600">
-                Our AI damage analysis typically achieves 85-95% accuracy depending on image quality and damage type. 
-                Results should be confirmed by a professional for final assessment.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-lg font-medium text-gray-800">Can I use the analysis report for my insurance claim?</h3>
-              <p className="mt-1 text-gray-600">
-                The analysis report can be used as an initial assessment, but most insurance companies 
-                require their own adjuster's evaluation for official claims.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-lg font-medium text-gray-800">How do I get the best quality analysis?</h3>
-              <p className="mt-1 text-gray-600">
-                Take photos in good lighting, from multiple angles, ensure the damaged area is clearly visible,
-                and try to minimize reflections or shadows over the damaged area.
-              </p>
-            </div>
+            {latestUpdates.map((update) => (
+              <div
+                key={update.id}
+                className="flex items-start gap-4 p-4 rounded-xl border border-rose-200 hover:shadow-lg transition-all duration-300"
+              >
+                <div className="w-10 h-10 bg-rose-200/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <update.icon className="w-5 h-5 text-black" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-black mb-1">{update.title}</h3>
+                  <p className="text-gray-600 mb-2">{update.description}</p>
+                  <div className="flex items-center text-sm text-gray-500">
+                    <FaCalendar className="w-4 h-4 mr-2" />
+                    {update.date}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

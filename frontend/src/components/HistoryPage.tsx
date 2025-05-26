@@ -14,10 +14,8 @@ const HistoryPage: React.FC = () => {
     // Apply type filter
     if (filter !== 'all' && filter !== 'recent') {
       if (filter === 'severe') {
-        // For 'severe', assume we're looking for items with high damage severity
-        // This would depend on your data model and damage classification
         const confidence = item.confidence || 0;
-        if (confidence < 0.7) { // If confidence is less than 70%, not considered severe
+        if (confidence < 0.7) {
           return false;
         }
       } else if (!item.damageType?.toLowerCase().includes(filter.toLowerCase())) {
@@ -47,9 +45,9 @@ const HistoryPage: React.FC = () => {
     const counts = {
       all: history.length,
       dent: 0,
-      scratch: 0,
-      glass: 0,
-      severe: 0
+      scratch: 0,      glass: 0,
+      severe: 0,
+      recent: history.length
     };
     
     history.forEach(item => {
@@ -62,130 +60,112 @@ const HistoryPage: React.FC = () => {
     
     return counts;
   };
-
   const counts = getCounts();
 
+  // Filter Button Component
+  const FilterButton: React.FC<{
+    active: boolean;
+    onClick: () => void;
+    count: number;
+    children: React.ReactNode;
+    icon?: React.ReactNode;
+  }> = ({ active, onClick, count, children, icon }) => (
+    <button
+      onClick={onClick}      className={`inline-flex items-center px-4 py-2 rounded-xl font-medium transition-all duration-200 ${
+        active
+          ? 'bg-emerald-200 text-black'
+          : 'bg-white/10 text-gray-700 border border-rose-200/30 hover:bg-rose-200/20 hover:text-black'
+      }`}
+    >
+      {icon && <span className="mr-2">{icon}</span>}
+      {children}
+      <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+        active ? 'bg-black/10' : 'bg-rose-200/20 text-gray-600'
+      }`}>
+        {count}
+      </span>
+    </button>
+  );
   return (
-    <div className="bg-gray-50 min-h-screen p-4 md:p-6">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Analysis History</h1>
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background */}      <div className="absolute inset-0 bg-white">
+        <div className="absolute inset-0 bg-rose-200/20"></div>
+        <div className="absolute inset-0 opacity-15">
+          <div className="absolute top-1/4 left-1/6 w-80 h-80 bg-rose-200 rounded-full filter blur-3xl animate-pulse"></div>
+          <div className="absolute bottom-1/3 right-1/5 w-96 h-96 bg-rose-200/50 rounded-full filter blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
+          <div className="absolute top-2/3 left-3/4 w-64 h-64 bg-rose-200 rounded-full filter blur-2xl animate-pulse" style={{animationDelay: '4s'}}></div>
+        </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-          <div className="flex flex-wrap items-center gap-4 mb-4">
-            <div className="flex-grow">
-              <input
-                type="text"
-                placeholder="Search history..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
+      {/* Main Content */}
+      <div className="relative z-10 min-h-screen py-8 px-4">
+        <div className="max-w-7xl mx-auto">          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-200 mb-4">
+              <svg className="w-8 h-8 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
             </div>
-            <div>
-              <button 
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                onClick={() => setSearchTerm('')}
-                disabled={!searchTerm}
-              >
-                Clear
-              </button>
+            <h1 className="text-4xl font-bold text-black mb-2">
+              Analysis History
+            </h1>
+            <p className="text-gray-600 text-lg">
+              Track and review your car damage analysis results
+            </p>
+          </div>          {/* Stats Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm hover:shadow-lg transition-all duration-300 text-center">
+              <div className="text-2xl font-bold text-black mb-1">{counts.all}</div>
+              <div className="text-sm text-gray-600">Total Analyses</div>
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <FilterButton 
-              active={filter === 'all'} 
-              onClick={() => setFilter('all')}
-              count={counts.all}
-            >
-              All
-            </FilterButton>
-            <FilterButton 
-              active={filter === 'recent'} 
-              onClick={() => setFilter('recent')}
-            >
-              Most Recent
-            </FilterButton>
-            <FilterButton 
-              active={filter === 'dent'} 
-              onClick={() => setFilter('dent')}
-              count={counts.dent}
-            >
-              Dents
-            </FilterButton>
-            <FilterButton 
-              active={filter === 'scratch'} 
-              onClick={() => setFilter('scratch')}
-              count={counts.scratch}
-            >
-              Scratches
-            </FilterButton>
-            <FilterButton 
-              active={filter === 'glass'} 
-              onClick={() => setFilter('glass')}
-              count={counts.glass}
-            >
-              Glass Damage
-            </FilterButton>
-            <FilterButton 
-              active={filter === 'severe'} 
-              onClick={() => setFilter('severe')}
-              count={counts.severe}
-            >
-              Severe Damage
-            </FilterButton>
+            <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm hover:shadow-lg transition-all duration-300 text-center">
+              <div className="text-2xl font-bold text-black mb-1">{counts.dent}</div>
+              <div className="text-sm text-gray-600">Dent Damages</div>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm hover:shadow-lg transition-all duration-300 text-center">
+              <div className="text-2xl font-bold text-black mb-1">{counts.scratch}</div>
+              <div className="text-sm text-gray-600">Scratch Damages</div>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm hover:shadow-lg transition-all duration-300 text-center">
+              <div className="text-2xl font-bold text-black mb-1">{counts.severe}</div>
+              <div className="text-sm text-gray-600">Severe Cases</div>
+            </div>
+          </div>          {/* Search and Filter Panel */}
+          <div className="bg-white rounded-xl border border-rose-200 p-6 mb-8">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search analyses..."
+                    className="w-full pl-10 pr-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200"
+                  />
+                  <svg className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <select className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200">
+                  <option value="">All Types</option>
+                  <option value="dent">Dent</option>
+                  <option value="scratch">Scratch</option>
+                  <option value="severe">Severe</option>
+                </select>
+                <select className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="confidence">Confidence</option>
+                </select>
+              </div>
+            </div>
+          </div>{/* History Content */}
+          <div className="animate-fadeInUp animation-delay-300">
+            <ImageHistory history={sortedFilteredHistory} />
           </div>
         </div>
-
-        {/* Pass filtered history to ImageHistory component */}
-        <ImageHistory history={sortedFilteredHistory} />
-
-        {history.length > 0 && sortedFilteredHistory.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            <p className="text-lg">No results match your current filters</p>
-            <button
-              onClick={() => {
-                setFilter('all');
-                setSearchTerm('');
-              }}
-              className="mt-2 text-blue-600 hover:text-blue-800"
-            >
-              Clear all filters
-            </button>
-          </div>
-        )}
       </div>
     </div>
-  );
-};
-
-// Filter button component
-interface FilterButtonProps {
-  children: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-  count?: number;
-}
-
-const FilterButton: React.FC<FilterButtonProps> = ({ children, active, onClick, count }) => {
-  return (
-    <button
-      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-        active
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-      }`}
-      onClick={onClick}
-    >
-      {children}
-      {count !== undefined && (
-        <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-          active ? 'bg-white text-blue-600' : 'bg-gray-200 text-gray-700'
-        }`}>
-          {count}
-        </span>
-      )}
-    </button>
   );
 };
 

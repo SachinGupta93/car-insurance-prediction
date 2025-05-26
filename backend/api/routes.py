@@ -557,46 +557,71 @@ def analyze_with_gemini_only():
     logger.info("[ROUTE: /api/analyze/gemini-only] Starting Gemini-only damage analysis")
     
     try:
-        # Check for image file in request
-        logger.debug("[ROUTE: /api/analyze/gemini-only] Checking for image in request.files")
-        if 'image' not in request.files:
-            logger.error("[ROUTE: /api/analyze/gemini-only] No image file provided in request")
-            return jsonify({'error': 'No image file provided'}), 400
+        # Enhanced handling for both image file and imageUrl fallback
+        logger.debug("[ROUTE: /api/analyze/gemini-only] Checking for image data in request")
+        
+        image = None
+        temp_path = None
+        
+        # First, try to get image file from request
+        if 'image' in request.files:
+            file = request.files['image']
+            if file.filename != '' and file:
+                logger.info(f"[ROUTE: /api/analyze/gemini-only] Processing uploaded image: {file.filename}, " + 
+                           f"Content type: {file.content_type}, Size: {file.content_length or 'Unknown'}")
+                
+                try:
+                    # Read and process the uploaded image
+                    logger.debug("[ROUTE: /api/analyze/gemini-only] Reading uploaded image file")
+                    contents = file.read()
+                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Image content read, size: {len(contents)} bytes")
+                    
+                    logger.debug("[ROUTE: /api/analyze/gemini-only] Opening image with PIL")
+                    image = Image.open(io.BytesIO(contents))
+                    logger.info(f"[ROUTE: /api/analyze/gemini-only] Image opened successfully, format: {image.format}, size: {image.size}")
+                    
+                    # Save temporarily
+                    temp_path = f"temp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Saving temporary image to: {temp_path}")
+                    image.save(temp_path)
+                    logger.info(f"[ROUTE: /api/analyze/gemini-only] Saved temporary image: {temp_path}")
+                    
+                except Exception as e:
+                    logger.error(f"[ROUTE: /api/analyze/gemini-only] Error processing uploaded image: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    return jsonify({'error': f"Image processing error: {str(e)}"}), 500
+        
+        # If no uploaded file, try imageUrl parameter as fallback
+        if image is None and 'imageUrl' in request.form:
+            image_url = request.form['imageUrl']
+            logger.info(f"[ROUTE: /api/analyze/gemini-only] Using imageUrl fallback: {image_url}")
             
-        file = request.files['image']
-        if file.filename == '':
-            logger.error("[ROUTE: /api/analyze/gemini-only] Empty filename in request")
-            return jsonify({'error': 'No selected file'}), 400
+            try:
+                # Check if the file exists
+                if os.path.exists(image_url):
+                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Loading image from path: {image_url}")
+                    image = Image.open(image_url)
+                    temp_path = image_url  # Use existing path
+                    logger.info(f"[ROUTE: /api/analyze/gemini-only] Image loaded from path successfully, format: {image.format}, size: {image.size}")
+                else:
+                    logger.error(f"[ROUTE: /api/analyze/gemini-only] Image file not found at path: {image_url}")
+                    return jsonify({'error': f'Image file not found at path: {image_url}'}), 404
+                    
+            except Exception as e:
+                logger.error(f"[ROUTE: /api/analyze/gemini-only] Error loading image from path: {str(e)}")
+                logger.error(traceback.format_exc())
+                return jsonify({'error': f"Error loading image from path: {str(e)}"}), 500
+        
+        # If still no image, return error
+        if image is None:
+            logger.error("[ROUTE: /api/analyze/gemini-only] No valid image provided (neither uploaded file nor valid imageUrl)")
+            return jsonify({'error': 'No valid image provided. Please upload an image file or provide a valid image path.'}), 400
 
         # Check for API key availability
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             logger.error("[ROUTE: /api/analyze/gemini-only] No Gemini API key found")
             return jsonify({'error': 'Gemini API key not configured. Set GEMINI_API_KEY environment variable.'}), 503
-
-        # Debugging information about the file
-        logger.info(f"[ROUTE: /api/analyze/gemini-only] Processing image: {file.filename}, " + 
-                   f"Content type: {file.content_type}, Size: {file.content_length or 'Unknown'}")
-
-        try:
-            # Read and process the image
-            logger.debug("[ROUTE: /api/analyze/gemini-only] Reading image file")
-            contents = file.read()
-            logger.debug(f"[ROUTE: /api/analyze/gemini-only] Image content read, size: {len(contents)} bytes")
-            
-            logger.debug("[ROUTE: /api/analyze/gemini-only] Opening image with PIL")
-            image = Image.open(io.BytesIO(contents))
-            logger.info(f"[ROUTE: /api/analyze/gemini-only] Image opened successfully, format: {image.format}, size: {image.size}")
-            
-            # Save temporarily
-            temp_path = f"temp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            logger.debug(f"[ROUTE: /api/analyze/gemini-only] Saving temporary image to: {temp_path}")
-            image.save(temp_path)
-            logger.info(f"[ROUTE: /api/analyze/gemini-only] Saved temporary image: {temp_path}")
-        except Exception as e:
-            logger.error(f"[ROUTE: /api/analyze/gemini-only] Error processing image: {str(e)}")
-            logger.error(traceback.format_exc())
-            return jsonify({'error': f"Image processing error: {str(e)}"}), 500
         
         try:
             # Import and use directly with no fallbacks
@@ -618,41 +643,180 @@ def analyze_with_gemini_only():
                 insurance_analyzer._use_mock = False
             
             # Convert image for direct use with Gemini
-            import io
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='JPEG')
             img_bytes = img_byte_arr.getvalue()
             
-            # Direct API call to Gemini
+            # Direct API call to Gemini with enhanced insurance prompts
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-pro-vision")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(
                 contents=[
-                    "You are an expert car damage analyzer. Analyze this car image in great detail and provide a comprehensive report on:",
-                    "1. Detailed damage assessment (type, severity, location)",
-                    "2. Repair recommendations with cost estimates",
-                    "3. Safety implications",
-                    "4. Insurance considerations",
-                    "5. Vehicle impact assessment",
-                    "Structure your response in a professional format with clear sections.",
+                    """🚗 EXPERT AUTOMOTIVE DAMAGE ANALYST & INSURANCE SPECIALIST
+
+You are a certified automotive damage assessor and senior insurance specialist with 25+ years of experience. Analyze this vehicle image with the precision of a professional adjuster and provide a comprehensive, actionable report.
+
+📋 VEHICLE IDENTIFICATION & ASSESSMENT:
+- FIRST: Identify make, model, year, trim level, and approximate value range
+- Document vehicle condition prior to damage assessment
+- Note any pre-existing wear, modifications, or maintenance indicators
+- Assess overall vehicle age and mileage appearance
+
+🔍 COMPREHENSIVE DAMAGE ANALYSIS:
+- Map ALL visible damage with precise locations (use clock positions: 12 o'clock = front, 3 o'clock = passenger side, etc.)
+- Categorize each damage type: Surface scratches, deep scratches, paint transfer, dents, creases, cracks, structural deformation
+- Rate severity: MINOR (cosmetic only), MODERATE (functional impact possible), SEVERE (safety/structural concerns), CRITICAL (unsafe to drive)
+- Identify potential hidden damage based on impact patterns and force distribution
+- Assess whether damage extends beyond visible areas (frame, suspension, electrical systems)
+
+💰 DETAILED FINANCIAL ASSESSMENT:
+REPAIR COST BREAKDOWN:
+- Parts costs (OEM vs aftermarket pricing)
+- Labor hours required (body shop rates: $45-120/hour)
+- Paint and materials ($200-800 depending on coverage area)
+- Specialty services (frame straightening, wheel alignment, etc.)
+- Total estimated range: $XXX - $XXX
+
+INSURANCE CLAIM ANALYSIS:
+- Claim threshold assessment (typically $500-1500 depending on policy)
+- Deductible impact calculation
+- Premium increase probability (0-30% for 3-5 years)
+- Total cost of ownership impact over 5 years
+- Recommendation: CLAIM vs. PAY OUT-OF-POCKET with detailed reasoning
+
+🛠️ EXPERT REPAIR STRATEGY:
+REPAIR METHOD RECOMMENDATIONS:
+- Paintless Dent Repair (PDR) viability assessment
+- Traditional body work requirements
+- Parts replacement vs. repair feasibility
+- Quality levels: Insurance-grade vs. Premium restoration
+- Timeline: Rush (2-3 days) vs. Standard (1-2 weeks) vs. Show Quality (3-4 weeks)
+
+SHOP SELECTION GUIDANCE:
+- Certified shops (manufacturer authorized) vs. independent shops
+- Insurance Direct Repair Program (DRP) considerations
+- Quality indicators to look for in shop selection
+- Questions to ask potential repair facilities
+
+⚠️ SAFETY & LEGAL COMPLIANCE:
+IMMEDIATE SAFETY ASSESSMENT:
+- Vehicle drivability status: SAFE / CAUTION / UNSAFE
+- Critical systems affected (lights, mirrors, structural integrity)
+- Legal roadworthiness in your jurisdiction
+- Emergency repairs needed before driving
+
+REGULATORY COMPLIANCE:
+- Inspection requirements post-repair
+- Documentation needed for legal compliance
+- Safety equipment functionality verification
+
+📞 STEP-BY-STEP INSURANCE CLAIM PROCESS:
+1. IMMEDIATE ACTIONS (First 24 hours):
+   - Document scene with photos from multiple angles
+   - Collect other party information (if applicable)
+   - Contact insurance company to report claim
+   - Get police report number (if applicable)
+
+2. DOCUMENTATION REQUIRED:
+   - High-resolution photos: Overview, close-ups, interior damage, VIN
+   - Repair estimates from 2-3 certified shops
+   - Police report (if applicable)
+   - Witness statements (if applicable)
+
+3. ADJUSTER INTERACTION STRATEGY:
+   - Key points to emphasize during inspection
+   - Hidden damage areas to highlight
+   - Negotiation tactics for maximum coverage
+   - When to request re-inspection
+
+4. OPTIMAL TIMING CONSIDERATIONS:
+   - Best times to file claim (avoid holiday periods)
+   - Coordination with repair shop schedules
+   - Rental car arrangement timing
+
+🎯 PERSONALIZED RECOMMENDATIONS:
+Based on this specific damage assessment, provide:
+- YOUR TOP RECOMMENDATION: Claim or pay out-of-pocket with specific reasoning
+- Estimated total financial impact over 5 years
+- Preferred repair approach for optimal value
+- Timeline recommendations based on urgency
+- Preventive measures to avoid similar damage
+
+📊 RISK ASSESSMENT MATRIX:
+- Probability of successful claim: XX%
+- Expected premium increase: XX% for XX years
+- Total 5-year cost impact: $XXX
+- Resale value impact: $XXX reduction
+- Recommended action confidence level: XX%
+
+FORMAT: Provide response in clearly labeled sections with specific dollar amounts, percentages, and actionable steps. Use emojis for section headers and bullet points for easy scanning. Be precise with all estimates and provide ranges where appropriate.""",
                     {"mime_type": "image/jpeg", "data": img_bytes}
                 ]
             )
             
             logger.info("[ROUTE: /api/analyze/gemini-only] Direct Gemini analysis successful")
             
-            # Clean up temp file
+            # Clean up temp file if we created one
             try:
-                if os.path.exists(temp_path):
+                if temp_path and temp_path.startswith('temp_') and os.path.exists(temp_path):
                     logger.debug(f"[ROUTE: /api/analyze/gemini-only] Removing temporary file: {temp_path}")
                     os.remove(temp_path)
+                else:
+                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Skipping cleanup - using existing file or no temp file created")
             except Exception as e:
                 logger.warning(f"[ROUTE: /api/analyze/gemini-only] Error removing temp file: {str(e)}")
             
-            # Return raw Gemini output - no processing
+            # Parse the response to extract analysis and recommendations
+            analysis_text = response.text
+            
+            # Try to extract recommendations from the response
+            recommendations = []
+            analysis_parts = analysis_text.split('\n')
+            
+            # Look for bullet points or numbered lists that could be recommendations
+            in_recommendations = False
+            current_analysis = []
+            
+            for line in analysis_parts:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Check if this line indicates start of recommendations
+                if any(keyword in line.lower() for keyword in ['recommendation', 'suggest', 'should', 'action']):
+                    in_recommendations = True
+                    
+                # If line starts with bullet points, numbers, or dashes, treat as recommendation
+                if line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')) or in_recommendations:
+                    if line.startswith(('•', '-', '*')):
+                        recommendations.append(line[1:].strip())
+                    elif line[0].isdigit() and '.' in line[:3]:
+                        recommendations.append(line.split('.', 1)[1].strip())
+                    elif in_recommendations:
+                        recommendations.append(line)
+                else:
+                    current_analysis.append(line)
+            
+            # If no specific recommendations found, create some based on the analysis
+            if not recommendations:
+                if 'damage' in analysis_text.lower():
+                    recommendations = [
+                        "Consult with a professional auto body shop for detailed assessment",
+                        "Document all damage with photos for insurance purposes",
+                        "Get multiple repair quotes before proceeding",
+                        "Check if any safety systems are affected"
+                    ]
+            
+            # Return structured response that matches frontend expectations
             return jsonify({
-                'analysis_text': response.text,
-                'model': 'gemini-pro-vision'
+                'analysis': ' '.join(current_analysis) if current_analysis else analysis_text,
+                'recommendations': recommendations,
+                'additionalInfo': {
+                    'model': 'gemini-1.5-flash',
+                    'confidence': 'High',
+                    'analysisType': 'Advanced AI Analysis'
+                },
+                'rawResponse': analysis_text
             }), 200
             
         except Exception as e:
@@ -666,10 +830,11 @@ def analyze_with_gemini_only():
         
         # Try to clean up temp file if it exists
         try:
-            if 'temp_path' in locals() and os.path.exists(temp_path):
+            if 'temp_path' in locals() and temp_path and temp_path.startswith('temp_') and os.path.exists(temp_path):
                 os.remove(temp_path)
-        except:
-            pass
+                logger.debug(f"[ROUTE: /api/analyze/gemini-only] Cleaned up temp file in error handler: {temp_path}")
+        except Exception as cleanup_error:
+            logger.warning(f"[ROUTE: /api/analyze/gemini-only] Error during cleanup: {str(cleanup_error)}")
             
         return jsonify({'error': f"Server error: {str(e)}"}), 500
 

@@ -53,6 +53,18 @@ test_images/
 *.db
 *.sqlite3
 
+# Temporary files
+temp_*.jpg
+temp_*.png
+temp_*.gif
+*.tmp
+*.temp
+
+# Test files (keep in development, exclude from production)
+test_*.html
+test_*.py
+*_test.py
+
 # Logs
 logs/
 *.log
@@ -63,4 +75,4 @@ pnpm-debug.log*
 
 # Testing
 coverage/
-.nyc_output/ 
+.nyc_output/

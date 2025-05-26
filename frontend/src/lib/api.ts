@@ -61,7 +61,8 @@ export async function analyzeDamage(imageUrl: string): Promise<ApiResponse<{
     damageType: string;
     confidence: number;
     description: string;
-    repairEstimate: string;
+    damageDescription: string;
+    repairEstimate?: string;
     recommendations: string[];
   }>;
 }>> {

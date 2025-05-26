@@ -43,11 +43,23 @@ const Auth: React.FC<AuthProps> = ({
       });
     }
   }, [isAuthenticated, firebaseUser, getIdToken]);
-
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex justify-center items-center relative overflow-hidden">
+        {/* Animated background elements */}
+        <div className="absolute inset-0">
+          <div className="bg-pattern-grid opacity-5"></div>
+          <div className="floating-shape floating-shape-1 bg-gradient-to-r from-blue-400/20 to-purple-400/20"></div>
+          <div className="floating-shape floating-shape-2 bg-gradient-to-r from-green-400/20 to-blue-400/20"></div>
+          <div className="floating-shape floating-shape-3 bg-gradient-to-r from-purple-400/20 to-pink-400/20"></div>
+        </div>
+        
+        {/* Loading content */}
+        <div className="relative z-10 text-center">
+          <div className="loading-automotive mb-4"></div>
+          <h3 className="text-white text-lg font-medium mb-2">CarGuard AI</h3>
+          <p className="text-slate-300">Authenticating...</p>
+        </div>
       </div>
     );
   }

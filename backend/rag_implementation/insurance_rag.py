@@ -23,15 +23,25 @@ class InsuranceRAG:
                 self._use_mock = True
             else:
                 genai.configure(api_key=api_key)
-                # Use a supported model
+                # Use supported current models
                 try:
-                    self.model = genai.GenerativeModel("gemini-pro")
-                    self._use_mock = False
-                    logger.info("Insurance RAG system initialized with Gemini API")
+                    model_options = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-1.0-pro-vision-latest"]
+                    for model_name in model_options:
+                        try:
+                            self.model = genai.GenerativeModel(model_name)
+                            self._use_mock = False
+                            logger.info(f"Insurance RAG system initialized with Gemini {model_name}")
+                            break
+                        except Exception as specific_error:
+                            logger.warning(f"Could not initialize {model_name}: {str(specific_error)}")
+                    
+                    if not hasattr(self, "model"):
+                        raise Exception("No suitable Gemini models available")
+                        
                 except Exception as model_error:
-                    logger.error(f"Error creating Gemini model: {str(model_error)}")
+                    logger.error(f"All Gemini models failed: {str(model_error)}")
                     self._use_mock = True
-                    logger.warning("Using mock implementation due to model error")
+                    logger.warning("Using mock implementation due to model unavailability")
         except Exception as e:
             logger.error(f"Error initializing InsuranceRAG: {str(e)}")
             logger.error(traceback.format_exc())
@@ -78,17 +88,19 @@ class InsuranceRAG:
             # Generate detailed, comprehensive recommendations using Gemini
             logger.info(f"Generating comprehensive insurance recommendations with Gemini for {damage_type} damage")
             response = self.model.generate_content([
-                f"You are an expert insurance advisor with 20+ years of experience. Provide extremely detailed and comprehensive insurance recommendations for a vehicle with {severity} {damage_type} damage with estimated repair cost of {estimated_cost}.",
-                "Include thorough analysis of:",
-                "1. Claim filing recommendation - Should the customer file a claim? Provide detailed reasoning with pros/cons analysis",
-                "2. Comprehensive coverage analysis - Analyze exactly what would be covered and what wouldn't be under different policy types",
-                "3. Premium impact calculation - Detailed analysis of how filing a claim would impact premiums over the next 3-5 years",
-                "4. Deductible optimization - In-depth analysis of optimal deductible amounts with cost-benefit analysis",
-                "5. Additional coverage recommendations - Specific policy endorsements that would benefit this customer",
-                "6. Risk assessment - Comprehensive assessment of future risks",
-                "7. Insurance company comparison - Analysis of how different insurance providers would handle this specific damage",
-                "8. Claims process guidance - Step-by-step instructions for optimal claim filing",
-                "Format the response as detailed, professional HTML with headers, lists, and tables for maximum readability and value to the customer."
+                f"You are an expert insurance advisor with 20+ years of experience in the Indian automotive insurance market. Provide extremely detailed and comprehensive insurance recommendations for a vehicle with {severity} {damage_type} damage with estimated repair cost of {estimated_cost}.",
+                "Include thorough analysis with costs in Indian Rupees (₹) as primary currency:",
+                "1. Claim filing recommendation - Should the customer file a claim? Provide detailed reasoning with pros/cons analysis considering Indian insurance practices",
+                "2. Comprehensive coverage analysis - Analyze exactly what would be covered under Indian motor insurance policies (Own Damage, Third Party, etc.)",
+                "3. Premium impact calculation - Detailed analysis of how filing a claim would impact premiums over the next 3-5 years in Indian market context",
+                "4. NCB (No Claim Bonus) impact - Specific analysis of NCB loss and recovery timeline",
+                "5. IDV (Insured Declared Value) considerations - How this claim affects IDV calculations",
+                "6. Cashless vs reimbursement - Analysis of network garage cashless claims vs reimbursement process",
+                "7. Authorized service center vs local garage - Cost and coverage differences in Indian market",
+                "8. Regional variations - Consider Metro vs Tier-2/3 city differences in costs and procedures",
+                "9. Insurance company comparison - Analysis of major Indian insurers (ICICI Lombard, Bajaj Allianz, HDFC ERGO, etc.)",
+                "10. Claims process guidance - Step-by-step instructions for optimal claim filing in India",
+                "Format the response with costs primarily in ₹ (Rupees) and include practical advice for Indian customers."
             ],
             generation_config={"temperature": 0.2, "max_output_tokens": 2048})
             
