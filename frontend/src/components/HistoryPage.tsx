@@ -139,6 +139,8 @@ const HistoryPage: React.FC = () => {
                     type="text"
                     placeholder="Search analyses..."
                     className="w-full pl-10 pr-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                   />
                   <svg className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -146,13 +148,33 @@ const HistoryPage: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-4">
-                <select className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200">
-                  <option value="">All Types</option>
+                <select 
+                  className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as FilterType)}
+                >
+                  <option value="all">All Types</option>
+                  <option value="recent">Recent</option>
                   <option value="dent">Dent</option>
                   <option value="scratch">Scratch</option>
+                  <option value="glass">Glass</option>
                   <option value="severe">Severe</option>
                 </select>
-                <select className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200">
+                <select 
+                  className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const sortedHistory = [...filteredHistory];
+                    
+                    if (value === "newest") {
+                      sortedHistory.sort((a, b) => new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime());
+                    } else if (value === "oldest") {
+                      sortedHistory.sort((a, b) => new Date(a.analysisDate).getTime() - new Date(b.analysisDate).getTime());
+                    } else if (value === "confidence") {
+                      sortedHistory.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+                    }
+                  }}
+                >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
                   <option value="confidence">Confidence</option>

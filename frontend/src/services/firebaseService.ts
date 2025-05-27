@@ -1,6 +1,7 @@
 import { rtdb } from '@/lib/firebase';
 import { ref, push, set, get, query, orderByChild, equalTo, remove, update } from 'firebase/database';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
+import { useCallback, useEffect } from 'react';
 
 export interface AnalysisHistoryItem {
   id: string;
@@ -52,14 +53,23 @@ export interface UserProfile {
 }
 
 class FirebaseDataService {
-  private isAuthenticated(): boolean {
-    // This will be overridden by the hook
-    return false;
+  private _isAuthenticated: boolean = false;
+  private _currentUserId: string | null = null;
+
+  // Set authentication state
+  setAuthState(isAuthenticated: boolean, userId: string | null) {
+    this._isAuthenticated = isAuthenticated;
+    this._currentUserId = userId;
   }
 
-  private getCurrentUserId(): string | null {
-    // This will be overridden by the hook
-    return null;
+  // Check if user is authenticated
+  isAuthenticated() {
+    return this._isAuthenticated;
+  }
+
+  // Get current user ID
+  getCurrentUserId() {
+    return this._currentUserId;
   }
 
   // User Profile Management
@@ -119,8 +129,20 @@ class FirebaseDataService {
     const historyRef = ref(rtdb, `users/${userId}/analysis_history`);
     const newAnalysisRef = push(historyRef);
     
+    // Validate imageUrl is a base64 string and not a blob URL to prevent storage issues
+    if (analysisData.imageUrl && analysisData.imageUrl.startsWith('blob:')) {
+      console.error('Cannot store blob URLs in Firebase - expect image loading errors');
+      // We'll still proceed, but this will cause issues when trying to load the image later
+    }
+    
+    // Ensure imageUrl is either a valid base64 string or a valid URL (not a blob)
+    const validatedImageUrl = analysisData.imageUrl && !analysisData.imageUrl.startsWith('blob:') 
+      ? analysisData.imageUrl 
+      : ''; // Empty string as fallback if invalid
+    
     const analysisItem: AnalysisHistoryItem = {
       ...analysisData,
+      imageUrl: validatedImageUrl,
       id: newAnalysisRef.key!,
       userId,
       analysisDate: new Date().toISOString(),
@@ -240,12 +262,34 @@ class FirebaseDataService {
     return newInsuranceRef.key!;
   }
 
-  async getInsurance(userId?: string): Promise<InsuranceData[]> {
+  async getInsurancePolicies(userId?: string): Promise<InsuranceData[]> {
     const uid = userId || this.getCurrentUserId();
     if (!uid) return [];
 
     const insuranceRef = ref(rtdb, `users/${uid}/insurance`);
     const snapshot = await get(insuranceRef);
+    
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      return Object.values(data) as InsuranceData[];
+    }
+    return [];
+  }
+
+  async getInsuranceByVehicle(vehicleId: string): Promise<InsuranceData[]> {
+    if (!this.isAuthenticated() || !this.getCurrentUserId()) {
+      throw new Error('User must be authenticated');
+    }
+
+    const userId = this.getCurrentUserId()!;
+    const insuranceRef = ref(rtdb, `users/${userId}/insurance`);
+    const vehicleInsuranceQuery = query(
+      insuranceRef, 
+      orderByChild('vehicleId'), 
+      equalTo(vehicleId)
+    );
+    
+    const snapshot = await get(vehicleInsuranceQuery);
     
     if (snapshot.exists()) {
       const data = snapshot.val();
@@ -263,7 +307,6 @@ class FirebaseDataService {
     const insuranceRef = ref(rtdb, `users/${userId}/insurance/${insuranceId}`);
     await update(insuranceRef, updates);
   }
-
   async removeInsurance(insuranceId: string): Promise<void> {
     if (!this.isAuthenticated() || !this.getCurrentUserId()) {
       throw new Error('User must be authenticated');
@@ -273,96 +316,109 @@ class FirebaseDataService {
     const insuranceRef = ref(rtdb, `users/${userId}/insurance/${insuranceId}`);
     await remove(insuranceRef);
   }
-
-  // Analytics and Statistics
-  async getAnalyticsData(userId?: string): Promise<{
+  
+  // Analytics Data
+  async getAnalyticsData(): Promise<{
     totalAnalyses: number;
     avgConfidence: number;
     damageTypes: Record<string, number>;
     monthlyTrends: Array<{ month: string; count: number; avgCost: number }>;
     severityBreakdown: Record<string, number>;
   }> {
-    const uid = userId || this.getCurrentUserId();
-    if (!uid) {
+    try {
+      const history = await this.getAnalysisHistory();
+      
+      // Calculate total analyses
+      const totalAnalyses = history.length;
+      
+      // Calculate average confidence
+      const avgConfidence = history.reduce((sum, item) => sum + item.confidence, 0) / 
+        (totalAnalyses || 1); // Prevent division by zero
+      
+      // Count damage types
+      const damageTypes: Record<string, number> = {};
+      history.forEach(item => {
+        damageTypes[item.damageType] = (damageTypes[item.damageType] || 0) + 1;
+      });
+      
+      // Calculate monthly trends (last 6 months)
+      const monthlyTrends: Array<{ month: string; count: number; avgCost: number }> = [];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      
+      const today = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const month = new Date(today);
+        month.setMonth(today.getMonth() - i);
+        const monthStr = months[month.getMonth()];
+        const year = month.getFullYear();
+        
+        const monthItems = history.filter(item => {
+          const date = new Date(item.analysisDate);
+          return date.getMonth() === month.getMonth() && date.getFullYear() === year;
+        });
+        
+        const avgCost = monthItems.reduce((sum, item) => {
+          const costStr = typeof item.repairEstimate === 'string' ? item.repairEstimate : '0';
+          const cost = parseInt(costStr.replace(/[^\d]/g, '')) || 0;
+          return sum + cost;
+        }, 0) / (monthItems.length || 1);
+        
+        monthlyTrends.push({
+          month: monthStr,
+          count: monthItems.length,
+          avgCost
+        });
+      }
+      
+      // Count by severity
+      const severityBreakdown: Record<string, number> = {
+        minor: 0,
+        moderate: 0,
+        severe: 0,
+        critical: 0
+      };
+      
+      history.forEach(item => {
+        if (item.severity) {
+          severityBreakdown[item.severity] = (severityBreakdown[item.severity] || 0) + 1;
+        }
+      });
+      
+      return {
+        totalAnalyses,
+        avgConfidence,
+        damageTypes,
+        monthlyTrends,
+        severityBreakdown
+      };
+    } catch (error) {
+      console.error('Error getting analytics data:', error);
       return {
         totalAnalyses: 0,
         avgConfidence: 0,
         damageTypes: {},
         monthlyTrends: [],
-        severityBreakdown: {},
+        severityBreakdown: {}
       };
     }
-
-    const history = await this.getAnalysisHistory(uid);
-    
-    // Calculate analytics
-    const totalAnalyses = history.length;
-    const avgConfidence = history.length > 0 
-      ? history.reduce((sum, item) => sum + item.confidence, 0) / history.length 
-      : 0;
-
-    // Group by damage types
-    const damageTypes: Record<string, number> = {};
-    history.forEach(item => {
-      damageTypes[item.damageType] = (damageTypes[item.damageType] || 0) + 1;
-    });
-
-    // Group by severity
-    const severityBreakdown: Record<string, number> = {};
-    history.forEach(item => {
-      if (item.severity) {
-        severityBreakdown[item.severity] = (severityBreakdown[item.severity] || 0) + 1;
-      }
-    });
-
-    // Monthly trends (last 12 months)
-    const monthlyTrends: Array<{ month: string; count: number; avgCost: number }> = [];
-    const now = new Date();
-    
-    for (let i = 11; i >= 0; i--) {
-      const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthStr = month.toISOString().substring(0, 7); // YYYY-MM format
-      
-      const monthData = history.filter(item => 
-        item.analysisDate.substring(0, 7) === monthStr
-      );
-        const avgCost = monthData.length > 0
-        ? monthData.reduce((sum, item) => {
-            // Extract numeric value from repair estimate
-            if (!item.repairEstimate) return sum;
-            const match = item.repairEstimate.match(/\$(\d+(?:,\d+)*)/);
-            return sum + (match ? parseInt(match[1].replace(/,/g, '')) : 0);
-          }, 0) / monthData.length
-        : 0;
-
-      monthlyTrends.push({
-        month: month.toLocaleDateString('en-US', { year: 'numeric', month: 'short' }),
-        count: monthData.length,
-        avgCost,
-      });
-    }
-
-    return {
-      totalAnalyses,
-      avgConfidence: Math.round(avgConfidence * 100) / 100,
-      damageTypes,
-      monthlyTrends,
-      severityBreakdown,
-    };
   }
 }
 
-// Create a hook to use the Firebase service with authentication context
-export const useFirebaseService = () => {
+// Create a singleton instance
+const firebaseDataService = new FirebaseDataService();
+
+// Hook to use Firebase Service with authentication
+export function useFirebaseService() {
   const { firebaseUser } = useFirebaseAuth();
   
-  const service = new FirebaseDataService();
+  // Use useEffect to set authentication state when firebaseUser changes
+  useEffect(() => {
+    const isAuthenticated = !!firebaseUser;
+    const userId = firebaseUser ? firebaseUser.uid : null;
+    firebaseDataService.setAuthState(isAuthenticated, userId);
+  }, [firebaseUser]);
   
-  // Override authentication methods
-  service['isAuthenticated'] = () => Boolean(firebaseUser);
-  service['getCurrentUserId'] = () => firebaseUser?.uid || null;
-  
-  return service;
-};
+  return firebaseDataService;
+}
 
-export default FirebaseDataService;
+export default firebaseDataService;

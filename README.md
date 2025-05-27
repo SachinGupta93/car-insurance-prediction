@@ -39,6 +39,12 @@ A comprehensive web application that leverages Google's Gemini AI to analyze car
 - Protected routes and user sessions
 - Secure API endpoints with proper validation
 
+### ⚡ **Performance Optimizations**
+- **Duplicate API Call Prevention**: Robust system to prevent multiple requests for the same image
+- File-based deduplication using unique identifiers (name, size, lastModified)
+- Session-based analysis tracking to prevent concurrent requests
+- Optimized resource usage and improved user experience
+
 ## 🛠️ Tech Stack
 
 ### Frontend

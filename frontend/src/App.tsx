@@ -8,6 +8,7 @@ import Dashboard from './components/dashboard/Dashboard';
 import HistoryPage from './components/HistoryPage';
 import ResourcesPage from './components/resources/ResourcesPage';
 import InsuranceAnalysis from './components/insurance/InsuranceAnalysis';
+import IntegrationTestPage from './components/IntegrationTestPage';
 import Auth from './components/Auth';
 import ErrorBoundary from './components/common/EnhancedErrorBoundary';
 import { NotificationProvider } from './context/NotificationContext';
@@ -118,13 +119,22 @@ function App() {
                         </div>
                       </ProtectedRoute>
                     }
-                  />
-                  <Route
+                  />                  <Route
                     path="/insurance"
                     element={
                       <ProtectedRoute>
                         <div className="animate-zoomIn">
                           <InsuranceAnalysis />
+                        </div>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/test"
+                    element={
+                      <ProtectedRoute>
+                        <div className="animate-fadeInUp">
+                          <IntegrationTestPage />
                         </div>
                       </ProtectedRoute>
                     }

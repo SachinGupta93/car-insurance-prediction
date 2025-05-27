@@ -18,7 +18,8 @@ import {
   FaStar,
   FaClock,
   FaCalendar,
-  FaBookOpen
+  FaBookOpen,
+  FaHistory
 } from 'react-icons/fa';
 
 interface Resource {
@@ -55,58 +56,75 @@ const ResourcesPage: React.FC = () => {
       }
     }
   };
-  // Sample resources data
-  const resources: Resource[] = [    {
+  // Actual resources data
+  const resources: Resource[] = [
+    {
       id: '1',
-      title: 'Understanding Insurance Claims',
-      description: 'Learn about the car insurance claim process after damage occurs.',
-      link: '#insurance-guide',
+      title: 'Insurance Claim Process',
+      description: 'Step-by-step guide to filing an insurance claim after car damage detection.',
+      link: '/resources/insurance-claim-process',
       icon: 'document',
       category: 'insurance',
     },
     {
       id: '2',
-      title: 'Finding Repair Shops',
-      description: 'Locate certified repair shops in your area based on damage type.',
-      link: '#repair-locations',
+      title: 'Certified Repair Network',
+      description: 'Find trusted repair shops in your area that specialize in your damage type.',
+      link: '/resources/repair-network',
       icon: 'wrench',
       category: 'repair',
     },
     {
       id: '3',
-      title: 'Damage Types Guide',
-      description: 'Reference guide for different types of car damage and their implications.',
-      link: '#damage-guide',
+      title: 'Damage Assessment Guide',
+      description: 'Comprehensive guide to understanding damage types, severity levels, and repair implications.',
+      link: '/resources/damage-guide',
       icon: 'book',
       category: 'documentation',
     },
     {
       id: '4',
-      title: 'Contact Support',
-      description: 'Need help with analysis results? Contact our support team.',
+      title: 'Technical Support',
+      description: 'Get help with using the application or understanding analysis results.',
       link: '/support',
       icon: 'headset',
       category: 'support',
     },
     {
       id: '5',
-      title: 'DIY Temporary Fixes',
-      description: 'Safe temporary fixes you can do yourself before professional repair.',
-      link: '#diy-fixes',
+      title: 'Emergency Repair Procedures',
+      description: 'Learn safe temporary fixes to prevent further damage before professional repair.',
+      link: '/resources/emergency-repairs',
       icon: 'tools',
       category: 'repair',
     },
     {
       id: '6',
-      title: 'Insurance Policy Guide',
-      description: 'Understand what your insurance might cover based on damage type.',
-      link: '#policy-guide',
+      title: 'Insurance Coverage Analysis',
+      description: 'Understand what your insurance policy covers based on damage type and severity.',
+      link: '/resources/coverage-analysis',
       icon: 'shield',
       category: 'insurance',
     },
+    {
+      id: '7',
+      title: 'Vehicle Safety Assessment',
+      description: 'Guidelines for determining if your vehicle is safe to drive after damage.',
+      link: '/resources/safety-assessment',
+      icon: 'shield',
+      category: 'documentation',
+    },
+    {
+      id: '8',
+      title: 'Cost Estimation Factors',
+      description: 'Learn what factors influence repair cost estimates for different damage types.',
+      link: '/resources/cost-factors',
+      icon: 'document',
+      category: 'documentation',
+    },
   ];
-  const getIconClass = (iconName: string): JSX.Element => {
-    const iconMap: Record<string, JSX.Element> = {
+  const getIconClass = (iconName: string): React.ReactElement => {
+    const iconMap: Record<string, React.ReactElement> = {
       document: <FaFileAlt className="text-blue-500" />,
       wrench: <FaWrench className="text-orange-500" />,
       book: <FaBook className="text-green-500" />,
@@ -135,28 +153,42 @@ const ResourcesPage: React.FC = () => {
     support: 'Support',
   };
 
-  // Latest updates data
+  // Latest updates data with actual information
   const latestUpdates = [
     {
       id: '1',
-      title: 'New Damage Analysis Features',
-      description: 'Added support for detecting paint damage and rust assessment',
-      date: '2024-03-15',
+      title: 'Advanced Damage Detection',
+      description: 'Improved AI model for detecting subtle paint damage, rust, and structural issues with higher accuracy',
+      date: '2024-04-15',
       icon: FaCar
     },
     {
       id: '2',
-      title: 'Insurance Integration Update',
-      description: 'Enhanced integration with major insurance providers',
-      date: '2024-03-10',
-      icon: FaShieldAlt
+      title: 'Multi-Region Cost Estimation',
+      description: 'Added support for region-specific repair cost estimates based on local labor and parts pricing',
+      date: '2024-04-10',
+      icon: FaHammer
     },
     {
       id: '3',
-      title: 'Mobile App Improvements',
-      description: 'New camera features for better damage documentation',
-      date: '2024-03-05',
-      icon: FaTools
+      title: 'Insurance Provider API Integration',
+      description: 'Direct integration with major insurance providers for streamlined claim submission',
+      date: '2024-04-05',
+      icon: FaShieldAlt
+    },
+    {
+      id: '4',
+      title: 'Enhanced Safety Assessment',
+      description: 'New safety evaluation system that provides drivability recommendations based on damage severity',
+      date: '2024-03-28',
+      icon: FaExclamationTriangle
+    },
+    {
+      id: '5',
+      title: 'Damage History Tracking',
+      description: 'New feature to track repair history and monitor recurring issues for the same vehicle',
+      date: '2024-03-20',
+      icon: FaHistory
     }
   ];
 

@@ -21,16 +21,41 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const [analysisResult, setAnalysisResult] = useState<DamageResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);  const previewUrlRef = useRef<string | null>(null);
+  const blobUrlsRef = useRef<string[]>([]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-
+  // Effect to manage URL objects and prevent memory leaks
   useEffect(() => {
-    const currentPreview = preview; // Capture current preview for cleanup
-    // Cleanup preview URL on unmount or when preview changes
+    // Clean up previous preview URL if it's different from the current one
+    if (previewUrlRef.current && previewUrlRef.current !== preview) {
+      URL.revokeObjectURL(previewUrlRef.current);
+    }
+    
+    // Store current preview URL
+    previewUrlRef.current = preview;
+    
+    // If there's a new preview URL and it starts with blob:, add it to our tracking array
+    if (preview && preview.startsWith('blob:')) {
+      blobUrlsRef.current.push(preview);
+    }
+
+    // Cleanup function to revoke all blob URLs on component unmount
     return () => {
-      if (currentPreview) {
-        URL.revokeObjectURL(currentPreview);
+      // Revoke current preview if it exists
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
       }
+      
+      // Revoke all tracked blob URLs
+      blobUrlsRef.current.forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error('Error revoking URL object:', err);
+        }
+      });
+      blobUrlsRef.current = [];
     };
   }, [preview]);
 
@@ -65,8 +90,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
       URL.revokeObjectURL(preview);
     }
 
-    const previewUrl = URL.createObjectURL(file);
-    setPreview(previewUrl);
+    const newPreviewUrl = URL.createObjectURL(file);
+    setPreview(newPreviewUrl);
     setSelectedFile(file);
     setError(null);
     setAnalysisResult(null);
@@ -91,11 +116,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const handleCancelUpload = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null; // Fix 3a: Clear the ref after aborting.
+      abortControllerRef.current = null;
     }
     setUploading(false);
-    setError('Analysis cancelled.'); // More accurate message
-    setPreview(null); // This will trigger the useEffect to revoke the object URL.
+    setError('Analysis cancelled.');
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+    setPreview(null);
     setSelectedFile(null);
     setAnalysisResult(null); // Also clear analysisResult on cancel
     setProgress(0);
@@ -103,7 +131,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
 
   const handleRemovePreview = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    setPreview(null); // useEffect will handle revokeObjectURL
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+    setPreview(null);
     setSelectedFile(null);
     setError(null);
     setAnalysisResult(null);
@@ -123,8 +154,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
     setProgress(100);
     success('Analysis Complete', `Successfully analyzed damage with ${(result.confidence * 100).toFixed(1)}% confidence`);
 
-    // Convert file to Base64 for history
-    let imageBase64 = preview || ''; // Fallback to blob if conversion fails, though not ideal
+  // Convert file to Base64 for history
+    let imageBase64 = ''; // Don't use preview (blob URL) as fallback
     if (selectedFile) {
       try {
         imageBase64 = await new Promise((resolve, reject) => {
@@ -136,11 +167,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
       } catch (error) {
         console.error("Error converting image to Base64 for history:", error);
         notifyError("History Save Error", "Could not save image preview to history.");
-        // imageBase64 will remain the blob URL as a fallback
       }
     }
 
-    if (onImageUploaded && imageBase64) { // Use imageBase64 if available
+    // Only proceed if we have a valid base64 string (not a blob URL)
+    if (onImageUploaded && imageBase64 && imageBase64.startsWith('data:')) {
       onImageUploaded(imageBase64, result);
     }
 

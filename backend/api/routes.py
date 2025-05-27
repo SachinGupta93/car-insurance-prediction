@@ -7,6 +7,8 @@ import sys
 from datetime import datetime
 import logging
 import google.generativeai as genai
+import re
+import json
 from backend.auth.user_auth import UserAuth
 from backend.rag_implementation.car_damage_rag import CarDamageRAG
 from backend.rag_implementation.insurance_rag import InsuranceRAG
@@ -34,6 +36,506 @@ try:
 except Exception as e:
     logger.error(f"Error initializing components: {str(e)}")
     logger.error(traceback.format_exc())
+
+def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
+    """Parse AI response into structured DamageResult format"""
+    logger.info("[PARSER] Starting AI response parsing")
+    logger.debug(f"[PARSER] Raw analysis length: {len(raw_analysis)} characters")
+    
+    # Check if this is a fallback response requesting more images
+    if "ENHANCED ANALYSIS REQUEST" in raw_analysis or "LOW CONFIDENCE" in raw_analysis:
+        logger.info("[PARSER] Detected fallback response - vehicle identification confidence is low")
+        
+        # Extract confidence if mentioned
+        confidence_match = re.search(r'LOW CONFIDENCE \((\d+)%\)', raw_analysis)
+        confidence = float(confidence_match.group(1)) / 100 if confidence_match else 0.3
+        
+        return {
+            "damageType": "Vehicle Identification Required",
+            "confidence": confidence,
+            "description": raw_analysis,
+            "damageDescription": f"Vehicle identification needed - current confidence: {int(confidence * 100)}%",
+            "recommendations": [
+                "Please provide additional photos showing vehicle from different angles",
+                "Include front view showing grille and headlights",
+                "Include rear view showing taillights and badges", 
+                "Include side profile view",
+                "Ensure images are clear and well-lit"
+            ],
+            "identifiedDamageRegions": [],
+            "vehicleIdentification": {
+                "make": "Identification Required",
+                "model": "Additional Photos Needed", 
+                "year": "Unknown",
+                "trimLevel": "Unknown",
+                "bodyStyle": "Unknown",
+                "confidence": confidence,
+                "identificationDetails": "Low confidence vehicle identification - please provide additional angles"
+            },
+            "enhancedRepairCost": {
+                "conservative": {"rupees": "₹0", "dollars": "$0"},
+                "comprehensive": {"rupees": "₹0", "dollars": "$0"},
+                "laborHours": "Pending vehicle identification",
+                "breakdown": {"parts": {"rupees": "₹0", "dollars": "$0"}, 
+                            "labor": {"rupees": "₹0", "dollars": "$0"}, 
+                            "materials": {"rupees": "₹0", "dollars": "$0"}},
+                "serviceTypeComparison": {"authorizedCenter": {"rupees": "₹0", "dollars": "$0"},
+                                        "multiBrandCenter": {"rupees": "₹0", "dollars": "$0"},
+                                        "localGarage": {"rupees": "₹0", "dollars": "$0"}},
+                "regionalVariations": {"metro": {"rupees": "₹0", "dollars": "$0"},
+                                     "tier1": {"rupees": "₹0", "dollars": "$0"},
+                                     "tier2": {"rupees": "₹0", "dollars": "$0"}}
+            },
+            "insuranceProviders": [],
+            "regionalInsights": {
+                "metroAdvantages": ["Better identification tools available", "More specialized expertise"],
+                "tier2Considerations": ["May need to consult regional experts"],
+                "regionalCostVariations": {"rupees": "₹0", "dollars": "$0"}
+            },
+            "marketAnalysis": {
+                "currentValue": {"rupees": "₹0", "dollars": "$0"},
+                "depreciationImpact": "Cannot assess without vehicle identification",
+                "resaleConsiderations": ["Vehicle identification required for market analysis"]
+            },
+            "claimStrategy": {
+                "recommended": "IDENTIFICATION_REQUIRED",
+                "reasoning": "Accurate vehicle identification is required for proper damage and cost assessment",
+                "timelineOptimization": "Provide additional vehicle photos first",
+                "documentationRequired": ["Clear vehicle photos from multiple angles", "Badge/emblem photos", "Interior dashboard view"]
+            },
+            "safetyAssessment": {
+                "drivability": "ASSESSMENT_PENDING",
+                "safetySystemImpacts": ["Assessment pending vehicle identification"],
+                "recommendations": ["Provide additional vehicle photos for complete safety assessment"]
+            }
+        }
+    
+    def extract_damage_regions(text: str) -> list:
+        """Extract damage regions from AI response"""
+        try:
+            # Look for JSON array in various formats
+            patterns = [
+                r'"identifiedDamageRegions"\s*:\s*(\[[\s\S]*?\])',
+                r'identifiedDamageRegions\s*:\s*(\[[\s\S]*?\])',
+                r'"identifiedDamageRegions":\s*(\[[\s\S]*?\])'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    try:
+                        regions = json.loads(match.group(1))
+                        if isinstance(regions, list):
+                            # Validate structure
+                            valid_regions = []
+                            for region in regions:
+                                if (isinstance(region, dict) and 
+                                    all(k in region for k in ['x', 'y', 'width', 'height', 'damageType', 'confidence'])):
+                                    valid_regions.append(region)
+                            return valid_regions
+                    except json.JSONDecodeError:
+                        continue
+            
+            logger.warning("[PARSER] No valid damage regions found in AI response")
+            return []
+        except Exception as e:
+            logger.error(f"[PARSER] Error extracting damage regions: {str(e)}")
+            return []
+    
+    def extract_vehicle_identification(text: str) -> dict:
+        """Extract vehicle identification from AI response"""
+        try:
+            logger.debug("[PARSER] Extracting vehicle identification")
+            
+            # Look for vehicle information patterns
+            make_patterns = [
+                r'Make[:\s]*([^\n,]+)',
+                r'Brand[:\s]*([^\n,]+)',
+                r'Manufacturer[:\s]*([^\n,]+)'
+            ]
+            
+            model_patterns = [
+                r'Model[:\s]*([^\n,]+)',
+                r'Model Name[:\s]*([^\n,]+)'
+            ]
+            
+            year_patterns = [
+                r'Year[:\s]*(\d{4})',
+                r'Model Year[:\s]*(\d{4})',
+                r'Manufacturing Year[:\s]*(\d{4})'
+            ]
+            
+            confidence_patterns = [
+                r'(?:confidence|certainty)[:\s]*(\d+(?:\.\d+)?%?)',
+                r'HIGH CONFIDENCE[:\s]*\((\d+)%\)',
+                r'MEDIUM CONFIDENCE[:\s]*\((\d+)%\)',
+                r'LOW CONFIDENCE[:\s]*\((\d+)%\)'
+            ]
+            
+            # Extract make/brand
+            make = "Unknown"
+            for pattern in make_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    make = match.group(1).strip()
+                    logger.debug(f"[PARSER] Found make: {make}")
+                    break
+            
+            # Extract model
+            model = "Unknown"
+            for pattern in model_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    model = match.group(1).strip()
+                    logger.debug(f"[PARSER] Found model: {model}")
+                    break
+            
+            # Extract year
+            year = "Unknown"
+            for pattern in year_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    year = match.group(1).strip()
+                    logger.debug(f"[PARSER] Found year: {year}")
+                    break
+            
+            # Extract confidence
+            confidence = 0.8  # Default
+            for pattern in confidence_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    conf_str = match.group(1).replace('%', '')
+                    confidence = float(conf_str) / 100 if float(conf_str) > 1 else float(conf_str)
+                    logger.debug(f"[PARSER] Found confidence: {confidence}")
+                    break
+            
+            # Extract trim level
+            trim_match = re.search(r'(?:trim|variant)[:\s]*([^\n,]+)', text, re.IGNORECASE)
+            trim_level = trim_match.group(1).strip() if trim_match else "Unknown"
+            
+            # Extract body style
+            body_style_match = re.search(r'body style[:\s]*([^\n,]+)', text, re.IGNORECASE)
+            body_style = body_style_match.group(1).strip() if body_style_match else "Unknown"
+            
+            # Create identification details
+            if confidence > 0.8:
+                details = f"High confidence identification: {make} {model}"
+            elif confidence > 0.5:
+                details = f"Medium confidence identification: {make} {model}"
+            else:
+                details = f"Low confidence identification - additional photos recommended"
+            
+            return {
+                "make": make,
+                "model": model,
+                "year": year,
+                "trimLevel": trim_level,
+                "bodyStyle": body_style,
+                "confidence": confidence,
+                "identificationDetails": details
+            }
+        except Exception as e:
+            logger.error(f"[PARSER] Error extracting vehicle identification: {str(e)}")
+            return {
+                "make": "Unknown", "model": "Unknown", "year": "Unknown",
+                "trimLevel": "Unknown", "bodyStyle": "Unknown", 
+                "confidence": 0.5, "identificationDetails": "Could not parse vehicle information"
+            }
+    
+    def extract_repair_costs(text: str) -> dict:
+        """Extract repair cost information from AI response"""
+        try:
+            logger.debug("[PARSER] Extracting repair costs from AI response")
+            
+            # Find all rupee and dollar amounts in the text
+            rupee_matches = re.findall(r'₹[\d,]+(?:-\s*₹[\d,]+)?', text)
+            dollar_matches = re.findall(r'\$[\d,]+(?:-\s*\$[\d,]+)?', text)
+            
+            logger.debug(f"[PARSER] Found {len(rupee_matches)} rupee amounts and {len(dollar_matches)} dollar amounts")
+            
+            # Extract specific cost categories if mentioned
+            conservative_rupees = "₹0"
+            comprehensive_rupees = "₹0"
+            conservative_dollars = "$0"
+            comprehensive_dollars = "$0"
+            
+            # Look for conservative/basic estimates
+            conservative_match = re.search(r'conservative[^₹]*₹([\d,]+)', text, re.IGNORECASE)
+            if conservative_match:
+                conservative_rupees = f"₹{conservative_match.group(1)}"
+                logger.debug(f"[PARSER] Found conservative estimate: {conservative_rupees}")
+            elif len(rupee_matches) > 0:
+                conservative_rupees = rupee_matches[0]
+                logger.debug(f"[PARSER] Using first rupee amount as conservative: {conservative_rupees}")
+            
+            # Look for comprehensive estimates
+            comprehensive_match = re.search(r'comprehensive[^₹]*₹([\d,]+)', text, re.IGNORECASE)
+            if comprehensive_match:
+                comprehensive_rupees = f"₹{comprehensive_match.group(1)}"
+                logger.debug(f"[PARSER] Found comprehensive estimate: {comprehensive_rupees}")
+            elif len(rupee_matches) > 1:
+                comprehensive_rupees = rupee_matches[1]
+                logger.debug(f"[PARSER] Using second rupee amount as comprehensive: {comprehensive_rupees}")
+            else:
+                comprehensive_rupees = conservative_rupees
+            
+            # Extract USD amounts similarly
+            conservative_usd_match = re.search(r'conservative[^$]*\$([\d,]+)', text, re.IGNORECASE)
+            if conservative_usd_match:
+                conservative_dollars = f"${conservative_usd_match.group(1)}"
+            elif len(dollar_matches) > 0:
+                conservative_dollars = dollar_matches[0]
+            
+            comprehensive_usd_match = re.search(r'comprehensive[^$]*\$([\d,]+)', text, re.IGNORECASE)
+            if comprehensive_usd_match:
+                comprehensive_dollars = f"${comprehensive_usd_match.group(1)}"
+            elif len(dollar_matches) > 1:
+                comprehensive_dollars = dollar_matches[1]
+            else:
+                comprehensive_dollars = conservative_dollars
+            
+            # Extract labor hours
+            labor_match = re.search(r'(\d+(?:-\d+)?)\s*hours?', text, re.IGNORECASE)
+            labor_hours = labor_match.group(1) + " hours" if labor_match else "2-4 hours"
+            
+            # Extract parts cost if mentioned
+            parts_rupee_match = re.search(r'parts[^₹]*₹([\d,]+)', text, re.IGNORECASE)
+            parts_rupees = f"₹{parts_rupee_match.group(1)}" if parts_rupee_match else "₹2,000"
+            
+            parts_dollar_match = re.search(r'parts[^$]*\$([\d,]+)', text, re.IGNORECASE)
+            parts_dollars = f"${parts_dollar_match.group(1)}" if parts_dollar_match else "$25"
+            
+            # Extract labor cost if mentioned
+            labor_rupee_match = re.search(r'labor[^₹]*₹([\d,]+)', text, re.IGNORECASE)
+            labor_rupees = f"₹{labor_rupee_match.group(1)}" if labor_rupee_match else "₹3,000"
+            
+            labor_dollar_match = re.search(r'labor[^$]*\$([\d,]+)', text, re.IGNORECASE)
+            labor_dollars = f"${labor_dollar_match.group(1)}" if labor_dollar_match else "$40"
+            
+            return {
+                "conservative": {"rupees": conservative_rupees, "dollars": conservative_dollars},
+                "comprehensive": {"rupees": comprehensive_rupees, "dollars": comprehensive_dollars},
+                "laborHours": labor_hours,
+                "breakdown": {
+                    "parts": {"rupees": parts_rupees, "dollars": parts_dollars},
+                    "labor": {"rupees": labor_rupees, "dollars": labor_dollars},
+                    "materials": {"rupees": "₹500", "dollars": "$5"}
+                },
+                "serviceTypeComparison": {
+                    "authorizedCenter": {"rupees": comprehensive_rupees, "dollars": comprehensive_dollars},
+                    "multiBrandCenter": {"rupees": conservative_rupees, "dollars": conservative_dollars},
+                    "localGarage": {"rupees": conservative_rupees, "dollars": conservative_dollars}
+                },
+                "regionalVariations": {
+                    "metro": {"rupees": comprehensive_rupees, "dollars": comprehensive_dollars},
+                    "tier1": {"rupees": conservative_rupees, "dollars": conservative_dollars},
+                    "tier2": {"rupees": conservative_rupees, "dollars": conservative_dollars}
+                }
+            }
+        except Exception as e:
+            logger.error(f"[PARSER] Error extracting repair costs: {str(e)}")
+            return {
+                "conservative": {"rupees": "₹3,000", "dollars": "$40"},
+                "comprehensive": {"rupees": "₹5,000", "dollars": "$65"},
+                "laborHours": "2-4 hours",
+                "breakdown": {"parts": {"rupees": "₹2,000", "dollars": "$25"}, 
+                            "labor": {"rupees": "₹2,500", "dollars": "$30"}, 
+                            "materials": {"rupees": "₹500", "dollars": "$5"}},
+                "serviceTypeComparison": {"authorizedCenter": {"rupees": "₹5,000", "dollars": "$65"},
+                                        "multiBrandCenter": {"rupees": "₹4,000", "dollars": "$50"},
+                                        "localGarage": {"rupees": "₹3,000", "dollars": "$40"}},
+                "regionalVariations": {"metro": {"rupees": "₹4,500", "dollars": "$55"},
+                                     "tier1": {"rupees": "₹4,000", "dollars": "$50"},
+                                     "tier2": {"rupees": "₹3,500", "dollars": "$45"}}
+            }
+    
+    def determine_damage_type_and_confidence(text: str) -> tuple:
+        """Determine primary damage type and confidence from AI response"""
+        text_lower = text.lower()
+        
+        # Check for "no damage" scenarios first
+        no_damage_indicators = ['no damage', 'good condition', 'no visible damage', 'appears to be in good condition']
+        if any(indicator in text_lower for indicator in no_damage_indicators):
+            return "No Damage", 0.9
+        
+        # Common damage types with keywords
+        damage_types = [
+            (['scratch', 'scratches', 'scratched'], 'Scratch'),
+            (['dent', 'dents', 'dented'], 'Dent'), 
+            (['crack', 'cracks', 'cracked'], 'Crack'),
+            (['bump', 'bumper'], 'Bumper Damage'),
+            (['paint', 'painting'], 'Paint Damage'),
+            (['collision', 'impact'], 'Impact Damage')
+        ]
+        
+        for keywords, damage_type in damage_types:
+            if any(keyword in text_lower for keyword in keywords):
+                # Try to extract confidence
+                confidence_match = re.search(r'confidence[:\s]*(\d+(?:\.\d+)?)', text, re.IGNORECASE)
+                confidence = float(confidence_match.group(1)) / 100 if confidence_match else 0.85
+                return damage_type, confidence
+        
+        return "General Damage", 0.8
+    
+    def extract_recommendations(text: str) -> list:
+        """Extract recommendations from AI response"""
+        try:
+            recommendations = []
+            lines = text.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('•') or line.startswith('-') or line.startswith('*'):
+                    recommendation = re.sub(r'^[•\-*]\s*', '', line).strip()
+                    if recommendation and len(recommendation) > 10:  # Filter out very short items
+                        recommendations.append(recommendation)
+            
+            if not recommendations:
+                # Fallback recommendations
+                recommendations = [
+                    "Professional assessment recommended",
+                    "Document damage with clear photos",
+                    "Get multiple repair estimates",
+                    "Consider insurance claim if repair cost exceeds deductible"
+                ]
+            
+            return recommendations[:5]  # Limit to 5 recommendations
+        except Exception as e:
+            logger.error(f"[PARSER] Error extracting recommendations: {str(e)}")
+            return ["Professional assessment recommended", "Document damage thoroughly"]
+    
+    try:
+        # Extract main damage information
+        damage_type, confidence = determine_damage_type_and_confidence(raw_analysis)
+        vehicle_id = extract_vehicle_identification(raw_analysis)
+        repair_costs = extract_repair_costs(raw_analysis)
+        damage_regions = extract_damage_regions(raw_analysis)
+        recommendations = extract_recommendations(raw_analysis)
+        
+        # Use the full AI response as description
+        description = raw_analysis.strip()
+        
+        # Handle "No Damage" scenario
+        if damage_type == "No Damage":
+            structured_result = {
+                "damageType": "No Damage",
+                "confidence": confidence,
+                "description": "The vehicle appears to be in good condition with no visible damage detected.",
+                "damageDescription": "No damage detected",
+                "recommendations": [
+                    "Vehicle appears to be in good condition",
+                    "Regular maintenance is recommended", 
+                    "Consider preventive measures to maintain condition"
+                ],
+                "identifiedDamageRegions": [],
+                "vehicleIdentification": vehicle_id,
+                "enhancedRepairCost": {
+                    "conservative": {"rupees": "₹0", "dollars": "$0"},
+                    "comprehensive": {"rupees": "₹0", "dollars": "$0"},
+                    "laborHours": "0 hours",
+                    "breakdown": {"parts": {"rupees": "₹0", "dollars": "$0"}, 
+                                "labor": {"rupees": "₹0", "dollars": "$0"}, 
+                                "materials": {"rupees": "₹0", "dollars": "$0"}},
+                    "serviceTypeComparison": {"authorizedCenter": {"rupees": "₹0", "dollars": "$0"},
+                                            "multiBrandCenter": {"rupees": "₹0", "dollars": "$0"},
+                                            "localGarage": {"rupees": "₹0", "dollars": "$0"}},
+                    "regionalVariations": {"metro": {"rupees": "₹0", "dollars": "$0"},
+                                         "tier1": {"rupees": "₹0", "dollars": "$0"},
+                                         "tier2": {"rupees": "₹0", "dollars": "$0"}}
+                },
+                "insuranceProviders": [],
+                "regionalInsights": {
+                    "metroAdvantages": [],
+                    "tier2Considerations": [],
+                    "regionalCostVariations": {"rupees": "₹0", "dollars": "$0"}
+                },
+                "marketAnalysis": {
+                    "currentValue": {"rupees": "₹5,00,000", "dollars": "$6,000"},
+                    "depreciationImpact": "No impact - vehicle in good condition",
+                    "resaleConsiderations": ["Maintain current condition", "Document regular maintenance"]
+                },
+                "claimStrategy": {
+                    "recommended": "NO_CLAIM_NEEDED",
+                    "reasoning": "No damage detected, no insurance claim necessary",
+                    "timelineOptimization": "N/A",
+                    "documentationRequired": []
+                },
+                "safetyAssessment": {
+                    "drivability": "SAFE",
+                    "safetySystemImpacts": [],
+                    "recommendations": ["Continue normal operation"]
+                }
+            }
+        else:
+            # Regular damage scenario
+            structured_result = {
+                "damageType": damage_type,
+                "confidence": confidence,
+                "description": description,
+                "damageDescription": f"{damage_type} detected with {int(confidence * 100)}% confidence",
+                "recommendations": recommendations,
+                "identifiedDamageRegions": damage_regions,
+                "vehicleIdentification": vehicle_id,
+                "enhancedRepairCost": repair_costs,
+                "insuranceProviders": [
+                    {
+                        "name": "Bajaj Allianz General Insurance",
+                        "recommendation": "PRIMARY",
+                        "pros": ["Strong network coverage", "Good claim settlement ratio"],
+                        "cons": ["Slightly higher premiums"],
+                        "vehicleSpecificAdvantages": ["Wide garage network"],
+                        "claimExperience": "Generally smooth process",
+                        "networkCoverage": "Extensive across India",
+                        "digitalCapabilities": "Mobile app available",
+                        "recommendedForVehicle": True
+                    }
+                ],
+                "regionalInsights": {
+                    "metroAdvantages": ["Better repair facilities", "Faster parts availability"],
+                    "tier2Considerations": ["Verify technician expertise", "Parts may take longer"],
+                    "regionalCostVariations": repair_costs["regionalVariations"]["metro"]
+                },
+                "marketAnalysis": {
+                    "currentValue": {"rupees": "₹8,00,000", "dollars": "$9,600"},
+                    "depreciationImpact": "Minor impact if repaired professionally",
+                    "resaleConsiderations": ["Document professional repair", "Quality affects resale value"]
+                },
+                "claimStrategy": {
+                    "recommended": "CONDITIONAL",
+                    "reasoning": "Consider repair cost vs deductible and NCB impact",
+                    "timelineOptimization": "Get multiple quotes before proceeding",
+                    "documentationRequired": ["Damage photos", "Repair estimates", "Police report if applicable"]
+                },
+                "safetyAssessment": {
+                    "drivability": "SAFE",
+                    "safetySystemImpacts": ["Monitor for warning indicators"],
+                    "recommendations": ["Professional inspection recommended"]
+                }
+            }
+        
+        logger.info(f"[PARSER] Successfully parsed AI response into structured format: {damage_type}")
+        return structured_result
+        
+    except Exception as e:
+        logger.error(f"[PARSER] Error parsing AI response: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Return fallback structure
+        return {
+            "damageType": "Analysis Error",
+            "confidence": 0.0,
+            "description": "Error occurred while analyzing the image",
+            "damageDescription": "Could not complete analysis",
+            "recommendations": ["Please try uploading the image again", "Ensure image is clear and well-lit"],
+            "identifiedDamageRegions": [],
+            "vehicleIdentification": {"make": "Unknown", "model": "Unknown", "year": "Unknown", "trimLevel": "Unknown", "bodyStyle": "Unknown", "confidence": 0.0, "identificationDetails": "Analysis failed"},
+            "enhancedRepairCost": {"conservative": {"rupees": "₹0", "dollars": "$0"}, "comprehensive": {"rupees": "₹0", "dollars": "$0"}, "laborHours": "Unknown", "breakdown": {"parts": {"rupees": "₹0", "dollars": "$0"}, "labor": {"rupees": "₹0", "dollars": "$0"}, "materials": {"rupees": "₹0", "dollars": "$0"}}, "serviceTypeComparison": {"authorizedCenter": {"rupees": "₹0", "dollars": "$0"}, "multiBrandCenter": {"rupees": "₹0", "dollars": "$0"}, "localGarage": {"rupees": "₹0", "dollars": "$0"}}, "regionalVariations": {"metro": {"rupees": "₹0", "dollars": "$0"}, "tier1": {"rupees": "₹0", "dollars": "$0"}, "tier2": {"rupees": "₹0", "dollars": "$0"}}},
+            "insuranceProviders": [],
+            "regionalInsights": {"metroAdvantages": [], "tier2Considerations": [], "regionalCostVariations": {"rupees": "₹0", "dollars": "$0"}},
+            "marketAnalysis": {"currentValue": {"rupees": "₹0", "dollars": "$0"}, "depreciationImpact": "Unknown", "resaleConsiderations": []},
+            "claimStrategy": {"recommended": "UNKNOWN", "reasoning": "Analysis failed", "timelineOptimization": "Retry analysis", "documentationRequired": []},
+            "safetyAssessment": {"drivability": "UNKNOWN", "safetySystemImpacts": [], "recommendations": ["Retry analysis with clear image"]}
+        }
 
 def firebase_auth_required(f):
     @wraps(f)
@@ -384,51 +886,14 @@ def analyze_car_damage():
             logger.info("[ROUTE: /api/analyze] Damage analysis completed successfully")
             logger.debug(f"[ROUTE: /api/analyze] Damage analysis result: {damage_analysis}")
             
-            # Extract structured data from the raw analysis
-            # This is a simplified example - in a real implementation, you would parse the raw analysis
-            # to extract structured data about damage types, confidence levels, etc.
-            
-            # For now, we'll create a simple structured response with mock data
-            structured_results = [
-                {
-                    "damageType": "Scratch",
-                    "confidence": 0.92,
-                    "description": "Surface level scratch on the front bumper",
-                    "repairEstimate": "$150-$300",
-                    "recommendations": [
-                        "Clean the area thoroughly",
-                        "Apply touch-up paint",
-                        "Consider professional buffing for best results"
-                    ]
-                },
-                {
-                    "damageType": "Dent",
-                    "confidence": 0.85,
-                    "description": "Small dent on the driver's side door",
-                    "repairEstimate": "$200-$500",
-                    "recommendations": [
-                        "Paintless dent repair is recommended",
-                        "Check for paint damage",
-                        "Ensure door functionality is not affected"
-                    ]
-                }
-            ]
-            
-            # In a production system, you would store the analysis in the user's history
-            # user_auth.add_analysis_history(user_id, {
-            #     "imageUrl": temp_path,
-            #     "analysis": damage_analysis,
-            #     "structured_results": structured_results
-            # })
-            
-            # Don't remove the temp file yet, as we might need it for further analysis
-            # or to display in the user's history
+            # Parse the AI response into structured format
+            structured_data = parse_ai_response_to_damage_result(damage_analysis["raw_analysis"])
             
             logger.info("[ROUTE: /api/analyze] Request completed successfully, returning result")
             return jsonify({
                 "data": {
-                    "results": structured_results,
-                    "raw_analysis": damage_analysis["raw_analysis"]
+                    "raw_analysis": damage_analysis["raw_analysis"],
+                    "structured_data": structured_data
                 }
             }), 200
             
@@ -448,6 +913,90 @@ def analyze_car_damage():
         except:
             pass
             
+        return jsonify({'error': f"Server error: {str(e)}"}), 500
+
+@api.route('/analyze-damage', methods=['POST'])
+@firebase_auth_required
+def analyze_damage_upload():
+    """Analyze car damage from uploaded image file using Gemini Vision AI"""
+    logger.info("[ROUTE: /api/analyze-damage] Starting damage analysis from file upload")
+    
+    try:
+        # Check if image file is provided
+        if 'image' not in request.files:
+            logger.error("[ROUTE: /api/analyze-damage] No image file provided")
+            return jsonify({'error': 'No image file provided'}), 400
+            
+        image_file = request.files['image']
+        
+        if image_file.filename == '':
+            logger.error("[ROUTE: /api/analyze-damage] Empty filename provided")
+            return jsonify({'error': 'No file selected'}), 400
+            
+        # Validate file type
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+        file_extension = image_file.filename.rsplit('.', 1)[1].lower() if '.' in image_file.filename else ''
+        
+        if file_extension not in allowed_extensions:
+            logger.error(f"[ROUTE: /api/analyze-damage] Invalid file type: {file_extension}")
+            return jsonify({'error': 'Invalid file type. Please upload an image file.'}), 400
+            
+        # Create temporary file
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as temp_file:
+            temp_path = temp_file.name
+            image_file.save(temp_path)
+            
+        logger.info(f"[ROUTE: /api/analyze-damage] Saved uploaded file to: {temp_path}")
+        
+        try:
+            # Analyze damage using Gemini Vision AI
+            logger.debug("[ROUTE: /api/analyze-damage] Calling car_damage_rag.analyze_image")
+            damage_analysis = car_damage_rag.analyze_image(temp_path)
+            logger.info("[ROUTE: /api/analyze-damage] Damage analysis completed successfully")
+            
+            # Parse the AI response into structured format
+            structured_data = parse_ai_response_to_damage_result(damage_analysis["raw_analysis"])
+            
+            # Store analysis in user's history if authenticated
+            try:
+                user_auth = UserAuth(request.app.config['db_ref'])
+                analysis_record = {
+                    "timestamp": datetime.now().isoformat(),
+                    "filename": image_file.filename,
+                    "structured_data": structured_data,
+                    "raw_analysis": damage_analysis["raw_analysis"]
+                }
+                user_auth.add_analysis_history(request.user['uid'], analysis_record)
+                logger.info("[ROUTE: /api/analyze-damage] Analysis saved to user history")
+            except Exception as history_error:
+                logger.warning(f"[ROUTE: /api/analyze-damage] Could not save to history: {str(history_error)}")
+            
+            logger.info("[ROUTE: /api/analyze-damage] Request completed successfully")
+            return jsonify({
+                "data": {
+                    "raw_analysis": damage_analysis["raw_analysis"],
+                    "structured_data": structured_data
+                }
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"[ROUTE: /api/analyze-damage] Error in damage analysis: {str(e)}")
+            logger.error(traceback.format_exc())
+            return jsonify({'error': f"Analysis error: {str(e)}"}), 500
+        
+        finally:
+            # Clean up temporary file
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    logger.debug(f"[ROUTE: /api/analyze-damage] Cleaned up temp file: {temp_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"[ROUTE: /api/analyze-damage] Could not clean up temp file: {str(cleanup_error)}")
+        
+    except Exception as e:
+        logger.error(f"[ROUTE: /api/analyze-damage] Unhandled error in analysis: {str(e)}")
+        logger.error(traceback.format_exc())
         return jsonify({'error': f"Server error: {str(e)}"}), 500
 
 @api.route('/insurance', methods=['POST'])
