@@ -14,11 +14,13 @@ htmlcov/
 
 # Node/Next.js frontend
 node_modules/
+node_modules_old/
 .next/
 out/
 build/
 dist/
 .DS_Store
+*.tsbuildinfo
 *.pem
 .env.local
 .env.development.local

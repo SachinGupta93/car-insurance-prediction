@@ -55,56 +55,94 @@ const AnalysisVisualization: React.FC<AnalysisVisualizationProps> = ({
     // Draw the image
     ctx.drawImage(imageRef.current, 0, 0, canvasWidth, canvasHeight);
     
-    // Draw damage regions if overlay is enabled
-    if (showOverlay && damageRegions.length > 0) {
-      damageRegions.forEach(region => {
-        // Calculate actual pixel coordinates from percentages
-        const x = (region.x / 100) * canvasWidth;
-        const y = (region.y / 100) * canvasHeight;
-        const width = (region.width / 100) * canvasWidth;
-        const height = (region.height / 100) * canvasHeight;
-          // Draw rectangle
-        ctx.fillStyle = highlightColor;
-        ctx.fillRect(x, y, width, height);
+    // Draw damage regions or "no regions" message if overlay is enabled
+    if (showOverlay) {
+      if (damageRegions && damageRegions.length > 0) {
+        damageRegions.forEach(region => {
+          // Calculate actual pixel coordinates from percentages
+          const x = (region.x / 100) * canvasWidth;
+          const y = (region.y / 100) * canvasHeight;
+          const width = (region.width / 100) * canvasWidth;
+          const height = (region.height / 100) * canvasHeight;
+            // Draw rectangle
+          ctx.fillStyle = highlightColor;
+          ctx.fillRect(x, y, width, height);
+          
+          // Draw border
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; // Modern red
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x, y, width, height);
+          
+          // Prepare label text
+          const label = `${region.damageType} (${Math.round(region.confidence * 100)}%)`;
+          
+          // Draw label background
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; // Dark background
+          ctx.fillRect(x, y - 25, ctx.measureText(label).width + 12, 20);
+          
+          // Draw label text
+          ctx.fillStyle = '#f1f5f9'; // Light text
+          ctx.font = 'bold 12px Inter, sans-serif';
+          
+          // Draw actual text
+          ctx.fillText(label, x + 6, y - 8);
+        });
+      } else {
+        // No regions to draw, but overlay is requested: show message
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        const message = 'No damage regions identified';
+
+        const textMetrics = ctx.measureText(message);
+        const textWidth = textMetrics.width;
+        const approxCharHeight = 16; // font size
+        const bgHeight = approxCharHeight * 1.5; // Background box height
+        const padding = 10;
+
+        const rectX = canvas.width / 2 - textWidth / 2 - padding;
+        const rectY = canvas.height / 2 - bgHeight / 2 - padding;
+        const rectWidth = textWidth + padding * 2;
+        const rectHeight = bgHeight + padding * 2;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; // Dark slate, slightly transparent background
+        ctx.fillRect(rectX, rectY, rectWidth, rectHeight);
         
-        // Draw border
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; // Modern red
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, width, height);
-        
-        // Prepare label text
-        const label = `${region.damageType} (${Math.round(region.confidence * 100)}%)`;
-        
-        // Draw label background
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; // Dark background
-        ctx.fillRect(x, y - 25, ctx.measureText(label).width + 12, 20);
-        
-        // Draw label text
-        ctx.fillStyle = '#f1f5f9'; // Light text
-        ctx.font = 'bold 12px Inter, sans-serif';
-        
-        // Draw actual text
-        ctx.fillText(label, x + 6, y - 8);
-      });
+        ctx.fillStyle = '#e2e8f0'; // Light slate text
+        ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+      }
     }
   };
-
   // Handle image loading
   useEffect(() => {
+    if (!imageUrl) {
+      console.error('No image URL provided to AnalysisVisualization');
+      return;
+    }
+
     const img = new Image();
+    
+    // Set crossOrigin before setting the src
+    if (!imageUrl.startsWith('data:')) {
+      img.crossOrigin = "anonymous"; // Handle CORS for non-data URLs
+    }
+    
     img.src = imageUrl;
-    img.crossOrigin = "anonymous"; // Handle CORS if needed
+    
     img.onload = () => {
       imageRef.current = img;
       drawCanvas();
     };
-    img.onerror = () => {
-      console.error('Error loading image for analysis visualization');
+    
+    img.onerror = (e) => {
+      console.error('Error loading image for analysis visualization', e);
     };
     
     return () => {
       img.onload = null;
       img.onerror = null;
+      // If it's a blob URL and we're managing it ourselves, we could revoke it here
+      // But we expect the parent component to handle URL lifecycle management
     };
   }, [imageUrl]);
   

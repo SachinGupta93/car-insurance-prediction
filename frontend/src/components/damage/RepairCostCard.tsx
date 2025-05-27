@@ -8,11 +8,10 @@ interface RepairCostCardProps {
 
 export const RepairCostCard: React.FC<RepairCostCardProps> = ({ repairCost, damageType }) => {
   const [selectedView, setSelectedView] = useState<'estimate' | 'breakdown' | 'regional'>('estimate');
-
   const formatCurrency = (amount: CurrencyAmount) => (
     <div className="flex flex-col">
-      <span className="text-lg font-bold text-gray-900">₹{amount.rupees}</span>
-      <span className="text-sm text-gray-600">${amount.dollars} USD</span>
+      <span className="text-lg font-bold text-gray-900">{amount.rupees}</span>
+      <span className="text-sm text-gray-600">{amount.dollars}</span>
     </div>
   );
 

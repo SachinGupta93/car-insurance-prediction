@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import ModernDashboard from './ModernDashboard';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, History, ArrowRight } from 'lucide-react';
 import AnalysisChart from '../charts/AnalysisChart';
@@ -16,31 +15,105 @@ const Dashboard: React.FC = () => {
   } | null>(null);
 
   useEffect(() => {
-    const loadAnalytics = async () => {
+    const loadData = async () => {
       try {
+        // Load analytics data
         const data = await firebaseService.getAnalyticsData();
         setAnalyticsData(data);
+        
+        // Load history for recent analyses
+        const history = await firebaseService.getAnalysisHistory();
+        
+        // Sort by date (newest first) and take the first 5
+        const sortedHistory = [...history].sort((a, b) => 
+          new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime()
+        ).slice(0, 5);
+        
+        // Transform to the format needed for the table
+        const recentItems = sortedHistory.map(item => ({
+          id: item.id,
+          date: new Date(item.analysisDate).toLocaleDateString(),
+          vehicle: item.location || 'Unknown Vehicle',
+          damageType: item.damageType,
+          severity: item.severity || 'Medium',
+          status: 'Completed'
+        }));
+        
+        setRecentAnalyses(recentItems);
+        
+        // Calculate stats
+        if (data) {
+          // Calculate month-over-month change
+          const lastTwoMonths = data.monthlyTrends.slice(-2);
+          const currentMonth = lastTwoMonths[1]?.count || 0;
+          const previousMonth = lastTwoMonths[0]?.count || 1; // Avoid division by zero
+          const percentChange = Math.round(((currentMonth - previousMonth) / previousMonth) * 100);
+            // Count analyses by status (using severity as a proxy for status)
+          // Add proper type annotation to ensure sum and count are numbers
+          const completed = Object.values(data.severityBreakdown).reduce((sum: number, count: number) => sum + count, 0);
+          const inProgress = Math.round(data.totalAnalyses * 0.1); // Assuming 10% are in progress
+          const pending = data.totalAnalyses - completed - inProgress;
+          
+          setStats([
+            { 
+              id: 1, 
+              value: data.totalAnalyses.toLocaleString(), 
+              label: 'Total Analyses', 
+              icon: LayoutDashboard, 
+              trend: percentChange >= 0 ? 'up' : 'down', 
+              change: Math.abs(percentChange) 
+            },
+            { 
+              id: 2, 
+              value: completed.toLocaleString(), 
+              label: 'Completed Analyses', 
+              icon: LayoutDashboard, 
+              trend: 'up', 
+              change: Math.round((completed / data.totalAnalyses) * 100) 
+            },
+            { 
+              id: 3, 
+              value: inProgress.toLocaleString(), 
+              label: 'In Progress Analyses', 
+              icon: LayoutDashboard, 
+              trend: 'up', 
+              change: Math.round((inProgress / data.totalAnalyses) * 100) 
+            },
+            { 
+              id: 4, 
+              value: pending.toLocaleString(), 
+              label: 'Pending Analyses', 
+              icon: LayoutDashboard, 
+              trend: 'up', 
+              change: Math.round((pending / data.totalAnalyses) * 100) 
+            },
+          ]);
+        }
       } catch (error) {
-        console.error('Failed to load analytics data:', error);
+        console.error('Failed to load dashboard data:', error);
       }
     };
 
-    loadAnalytics();
+    loadData();
   }, [firebaseService]);
 
-  const stats = [
-    { id: 1, value: '12,345', label: 'Total Analyses', icon: LayoutDashboard, trend: 'up', change: 10 },
-    { id: 2, value: '7,890', label: 'Completed Analyses', icon: LayoutDashboard, trend: 'up', change: 5 },
-    { id: 3, value: '4,567', label: 'In Progress Analyses', icon: LayoutDashboard, trend: 'down', change: 2 },
-    { id: 4, value: '2,345', label: 'Abandoned Analyses', icon: LayoutDashboard, trend: 'down', change: 1 },
-  ];
+  // Calculate stats from analytics data
+  const [stats, setStats] = useState([
+    { id: 1, value: '0', label: 'Total Analyses', icon: LayoutDashboard, trend: 'up', change: 0 },
+    { id: 2, value: '0', label: 'Completed Analyses', icon: LayoutDashboard, trend: 'up', change: 0 },
+    { id: 3, value: '0', label: 'In Progress Analyses', icon: LayoutDashboard, trend: 'up', change: 0 },
+    { id: 4, value: '0', label: 'Pending Analyses', icon: LayoutDashboard, trend: 'up', change: 0 },
+  ]);
 
-  const recentAnalyses = [
-    { id: 1, date: '2024-04-01', vehicle: 'Toyota Camry', damageType: 'Collision', severity: 'High', status: 'Completed' },
-    { id: 2, date: '2024-03-30', vehicle: 'Honda Accord', damageType: 'Scratch', severity: 'Medium', status: 'Completed' },
-    { id: 3, date: '2024-03-28', vehicle: 'Ford F-150', damageType: 'Dent', severity: 'Low', status: 'Completed' },
-    { id: 4, date: '2024-03-25', vehicle: 'Chevrolet Silverado', damageType: 'Scratch', severity: 'Medium', status: 'In Progress' },
-  ];
+  // Recent analyses from history
+  const [recentAnalyses, setRecentAnalyses] = useState<Array<{
+    id: string;
+    date: string;
+    vehicle: string;
+    damageType: string;
+    severity: string;
+    status: string;
+  }>>([]);
 
   const quickActions = [
     { id: 1, title: 'New Analysis', description: 'Start a new car damage analysis', buttonText: 'Start', link: '/new-analysis', icon: LayoutDashboard },
@@ -96,12 +169,12 @@ const Dashboard: React.FC = () => {
             </div>
             <Link
               to="/history"
-              className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-medium"
-            >
+              className="inline-flex items-center text-emerald-600 hover:text-emerald-700 font-medium"            >
               View All
               <ArrowRight className="w-4 h-4 ml-2" />
             </Link>
-          </div>          <div className="overflow-x-auto">
+          </div>
+          <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-rose-200">
