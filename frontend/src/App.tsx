@@ -9,21 +9,23 @@ import HistoryPage from './components/HistoryPage';
 import ResourcesPage from './components/resources/ResourcesPage';
 import InsuranceAnalysis from './components/insurance/InsuranceAnalysis';
 import IntegrationTestPage from './components/IntegrationTestPage';
+import ProfileFixPage from './components/ProfileFixPage';
 import Auth from './components/Auth';
 import ErrorBoundary from './components/common/EnhancedErrorBoundary';
+import APIKeyStatusPanel from './components/APIKeyStatusPanel';
 import { NotificationProvider } from './context/NotificationContext';
-import { useAuth } from './context/AuthContext';
+import { useFirebaseAuth } from './context/FirebaseAuthContext';
 import './App.css';
 
 // A wrapper for protected routes
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { firebaseUser, loading } = useFirebaseAuth();
 
   if (loading) {
     return <div className="flex justify-center items-center h-screen">Loading...</div>;
   }
 
-  if (!user) {
+  if (!firebaseUser) {
     return <Navigate to="/login" replace />;
   }
 
@@ -55,11 +57,24 @@ function App() {
             {/* Professional Navigation */}
             <div className="relative z-50">
               <Navbar />
-            </div>            {/* Professional Main Content Container */}
+            </div>
+
+            {/* API Key Status Panel (Development Only) */}
+            <APIKeyStatusPanel />            {/* Professional Main Content Container */}
             <main className="flex-1 relative z-30">
               <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 bg-white/90 backdrop-blur-lg shadow-lg rounded-lg my-6 border border-gray-200 transform transition-all duration-300 hover:shadow-xl hover:scale-[1.01]">
                 <Routes>
                   {/* Public Routes with Enhanced Animations */}
+                  <Route
+                    path="/auth"
+                    element={
+                      <Auth redirectAuthenticated redirectPath="/dashboard">
+                        <div className="animate-fadeInUp">
+                          <Login />
+                        </div>
+                      </Auth>
+                    }
+                  />
                   <Route
                     path="/login"
                     element={
@@ -88,10 +103,28 @@ function App() {
                       </div>
                     } 
                   />
+                  <Route 
+                    path="/profile-fix" 
+                    element={
+                      <div className="animate-fadeInUp">
+                        <ProfileFixPage />
+                      </div>
+                    } 
+                  />
 
                   {/* Protected Routes with Staggered Animations */}
                   <Route
                     path="/"
+                    element={
+                      <ProtectedRoute>
+                        <div className="animate-fadeInUp">
+                          <ImageUpload />
+                        </div>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/analyze"
                     element={
                       <ProtectedRoute>
                         <div className="animate-fadeInUp">

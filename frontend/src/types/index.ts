@@ -5,6 +5,11 @@ export interface VehicleIdentification {
   year?: string;
   trimLevel?: string;
   bodyStyle?: string;
+  engineSize?: string;
+  fuelType?: string;
+  marketSegment?: string;
+  idvRange?: string;
+  color?: string;
   confidence: number;
   identificationDetails?: string;
   fallbackRequired?: boolean;
@@ -78,12 +83,18 @@ export interface DamageResult {
   damageDescription: string;
   repairEstimate?: string; // Keep for backward compatibility
   recommendations: string[];
+  severity?: 'minor' | 'moderate' | 'severe' | 'critical'; // Add severity here
   
   // Enhanced Indian Market Features
   vehicleIdentification?: VehicleIdentification;
   enhancedRepairCost?: RepairCostEstimate;
   insuranceProviders?: InsuranceProvider[];
   regionalInsights?: RegionalInsuranceInsights;
+  
+  // Vehicle-Specific Insurance Advice
+  insurance_advice?: VehicleInsuranceAdvice;
+  insuranceRecommendations?: InsuranceRecommendations;
+  
   marketAnalysis?: {
     currentValue: CurrencyAmount;
     depreciationImpact: string;
@@ -101,6 +112,27 @@ export interface DamageResult {
     recommendations: string[];
   };
   identifiedDamageRegions?: DamageRegion[]; // Added for visualizing specific damage areas
+  
+  // Demo mode fields
+  isDemoMode?: boolean;
+  quotaExceeded?: boolean;
+  retryDelaySeconds?: number;
+}
+
+// Interface for items stored in the analysis history (as returned by firebaseService.getAnalysisHistory)
+export interface AnalysisHistoryItem {
+  id: string;
+  userId: string;
+  imageUrl: string;
+  analysisDate: string; // ISO date string
+  damageDescription: string;
+  repairEstimate?: string;
+  damageType: string; // Top-level damage type for the analysis
+  confidence: number;
+  description: string;
+  recommendations: string[];
+  location?: string;
+  severity?: 'minor' | 'moderate' | 'severe' | 'critical';
 }
 
 // Interface for items stored in the analysis history
@@ -108,9 +140,22 @@ export interface HistoricalAnalysis {
   id: string; // Unique ID for the history entry
   timestamp: string; // ISO string of when the analysis was done
   image: string; // Base64 encoded image or a URL to the image
+  imageUrl?: string; // Alternative image URL field for compatibility
   result: DamageResult; // The full damage analysis result
   userId?: string; // Optional: if you have user-specific history
+  uploadedAt: string; // Added to match usage in Dashboard.tsx
+  damageRegions?: DamageRegion[]; // Explicitly add here for easier access if needed, though ideally from result
+  severity?: 'minor' | 'moderate' | 'severe' | 'critical'; // Add severity here
+  
+  // Additional properties for compatibility with components
+  filename?: string; // File name for display
+  analysisDate?: string; // Alias for timestamp for compatibility
+  confidence?: number; // Confidence score from result
+  damageType?: string; // Top-level damage type for compatibility
 }
+
+// This will be the type used in the Dashboard
+export type UploadedImage = HistoricalAnalysis;
 
 export interface RagResult {
   answer: string;
@@ -132,4 +177,32 @@ export interface User {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
+}
+
+// Vehicle-Specific Insurance Advice Interface
+export interface VehicleInsuranceAdvice {
+  vehicleSpecificAdvice?: string;
+  ageConsiderations?: string;
+  deductibleStrategy?: string;
+  repairStrategy?: string;
+  ncbConsiderations?: string;
+  partsAvailability?: string;
+  recommendedCoverage?: string[];
+  estimatedPremium?: {
+    range: string;
+    annual: string;
+    factors: string;
+  };
+}
+
+// Enhanced Insurance Recommendations Interface
+export interface InsuranceRecommendations {
+  claimRecommendation: 'CLAIM_RECOMMENDED' | 'CLAIM_NOT_RECOMMENDED' | 'CONDITIONAL_CLAIM';
+  reasoning: string;
+  vehicleConsiderations?: string;
+  netBenefit: string;
+  deductible: string;
+  brandFactor?: string;
+  ageFactor?: string;
+  isVehicleSpecific: boolean;
 }

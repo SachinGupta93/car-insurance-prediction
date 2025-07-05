@@ -1,20 +1,28 @@
-from flask import Blueprint, request, jsonify
-from PIL import Image
-import io
-import os
-import traceback
-import sys
-from datetime import datetime
-import logging
-import google.generativeai as genai
+import math
 import re
 import json
-from backend.auth.user_auth import UserAuth
-from backend.rag_implementation.car_damage_rag import CarDamageRAG
-from backend.rag_implementation.insurance_rag import InsuranceRAG
-from backend.rag_implementation.vehicle_rag import VehicleRAG
+import requests
+import os
+import io
+import tempfile
+import random
+import time
+from datetime import datetime
+from PIL import Image
+from flask import Blueprint, jsonify, request
 from functools import wraps
-from backend.config.firebase_config import verify_firebase_token
+from rag_implementation.car_damage_rag import CarDamageRAG
+from rag_implementation.insurance_rag import InsuranceRAG
+from rag_implementation.vehicle_rag import VehicleRAG
+from auth.user_auth import UserAuth
+from config.firebase_config import verify_firebase_token
+from local_analyzer import create_smart_demo_response
+import google.generativeai as genai
+import traceback
+import logging
+from rate_limiter import global_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 # Configure logging with more detail
 logging.basicConfig(level=logging.DEBUG, 
@@ -27,8 +35,18 @@ api = Blueprint('api', __name__)
 # Initialize components with try/except to catch initialization errors
 try:
     logger.info("Initializing RAG components...")
-    car_damage_rag = CarDamageRAG()
-    logger.info("CarDamageRAG initialized successfully")
+    
+    # Try to initialize Multi-Gemini system first
+    try:
+        from rag_implementation.multi_gemini_clean import MultiGeminiCarDamageRAG
+        car_damage_rag = MultiGeminiCarDamageRAG()
+        logger.info("🚀 Multi-Gemini CarDamageRAG initialized successfully")
+    except Exception as multi_gemini_error:
+        logger.warning(f"Multi-Gemini initialization failed: {str(multi_gemini_error)}")
+        logger.info("Falling back to original single-key Gemini system...")
+        car_damage_rag = CarDamageRAG()
+        logger.info("CarDamageRAG (single-key Gemini fallback) initialized successfully")
+    
     insurance_rag = InsuranceRAG()
     logger.info("InsuranceRAG initialized successfully")
     vehicle_rag = VehicleRAG()
@@ -41,6 +59,7 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
     """Parse AI response into structured DamageResult format"""
     logger.info("[PARSER] Starting AI response parsing")
     logger.debug(f"[PARSER] Raw analysis length: {len(raw_analysis)} characters")
+    logger.debug(f"[PARSER] Raw analysis preview: {raw_analysis[:300]}...")  # Log first 300 characters
     
     # Check if this is a fallback response requesting more images
     if "ENHANCED ANALYSIS REQUEST" in raw_analysis or "LOW CONFIDENCE" in raw_analysis:
@@ -48,7 +67,7 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
         
         # Extract confidence if mentioned
         confidence_match = re.search(r'LOW CONFIDENCE \((\d+)%\)', raw_analysis)
-        confidence = float(confidence_match.group(1)) / 100 if confidence_match else 0.3
+        confidence = float(confidence_match.group(1))/100.0 if confidence_match else 0.3
         
         return {
             "damageType": "Vehicle Identification Required",
@@ -129,8 +148,7 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
                             # Validate structure
                             valid_regions = []
                             for region in regions:
-                                if (isinstance(region, dict) and 
-                                    all(k in region for k in ['x', 'y', 'width', 'height', 'damageType', 'confidence'])):
+                                if (isinstance(region, dict)) and all(k in region for k in ['x', 'y', 'width', 'height', 'damageType', 'confidence']):
                                     valid_regions.append(region)
                             return valid_regions
                     except json.JSONDecodeError:
@@ -143,20 +161,20 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             return []
     
     def extract_vehicle_identification(text: str) -> dict:
-        """Extract vehicle identification from AI response"""
+        """Extract vehicle identification from AI response with enhanced parsing"""
         try:
-            logger.debug("[PARSER] Extracting vehicle identification")
+            logger.debug("[PARSER] Extracting enhanced vehicle identification")
             
-            # Look for vehicle information patterns
+            # Enhanced patterns for vehicle information
             make_patterns = [
-                r'Make[:\s]*([^\n,]+)',
-                r'Brand[:\s]*([^\n,]+)',
-                r'Manufacturer[:\s]*([^\n,]+)'
+                r'Make[:\s]*([^\n,\]]+)',
+                r'Brand[:\s]*([^\n,\]]+)',
+                r'Manufacturer[:\s]*([^\n,\]]+)'
             ]
             
             model_patterns = [
-                r'Model[:\s]*([^\n,]+)',
-                r'Model Name[:\s]*([^\n,]+)'
+                r'Model[:\s]*([^\n,\]]+)',
+                r'Model Name[:\s]*([^\n,\]]+)'
             ]
             
             year_patterns = [
@@ -166,10 +184,34 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             ]
             
             confidence_patterns = [
+                r'Confidence[:\s]*(\d+(?:\.\d+)?%?)',
                 r'(?:confidence|certainty)[:\s]*(\d+(?:\.\d+)?%?)',
                 r'HIGH CONFIDENCE[:\s]*\((\d+)%\)',
                 r'MEDIUM CONFIDENCE[:\s]*\((\d+)%\)',
                 r'LOW CONFIDENCE[:\s]*\((\d+)%\)'
+            ]
+            
+            # Enhanced patterns for additional vehicle details
+            engine_patterns = [
+                r'Engine Size[:\s]*([^\n,\]]+)',
+                r'Engine[:\s]*([0-9.]+L)',
+                r'(\d\.\d+L|\d+cc)'
+            ]
+            
+            fuel_patterns = [
+                r'Fuel Type[:\s]*([^\n,\]]+)',
+                r'Fuel[:\s]*([^\n,\]]+)'
+            ]
+            
+            segment_patterns = [
+                r'Market Segment[:\s]*([^\n,\]]+)',
+                r'Segment[:\s]*([^\n,\]]+)'
+            ]
+            
+            idv_patterns = [
+                r'Typical IDV Range[:\s]*([^\n,\]]+)',
+                r'IDV[:\s]*₹([0-9,]+)',
+                r'Insurance Declared Value[:\s]*([^\n,\]]+)'
             ]
             
             # Extract make/brand
@@ -177,7 +219,7 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             for pattern in make_patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
-                    make = match.group(1).strip()
+                    make = match.group(1).strip().replace('[', '').replace(']', '')
                     logger.debug(f"[PARSER] Found make: {make}")
                     break
             
@@ -186,7 +228,7 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             for pattern in model_patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
-                    model = match.group(1).strip()
+                    model = match.group(1).strip().replace('[', '').replace(']', '')
                     logger.debug(f"[PARSER] Found model: {model}")
                     break
             
@@ -209,18 +251,53 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
                     logger.debug(f"[PARSER] Found confidence: {confidence}")
                     break
             
-            # Extract trim level
-            trim_match = re.search(r'(?:trim|variant)[:\s]*([^\n,]+)', text, re.IGNORECASE)
-            trim_level = trim_match.group(1).strip() if trim_match else "Unknown"
+            # Extract additional vehicle details
+            trim_match = re.search(r'(?:trim|variant)[:\s]*([^\n,\]]+)', text, re.IGNORECASE)
+            trim_level = trim_match.group(1).strip().replace('[', '').replace(']', '') if trim_match else "Unknown"
             
-            # Extract body style
-            body_style_match = re.search(r'body style[:\s]*([^\n,]+)', text, re.IGNORECASE)
-            body_style = body_style_match.group(1).strip() if body_style_match else "Unknown"
+            body_style_match = re.search(r'body style[:\s]*([^\n,\]]+)', text, re.IGNORECASE)
+            body_style = body_style_match.group(1).strip().replace('[', '').replace(']', '') if body_style_match else "Unknown"
             
-            # Create identification details
-            if confidence > 0.8:
-                details = f"High confidence identification: {make} {model}"
-            elif confidence > 0.5:
+            # Extract engine size
+            engine_size = "Unknown"
+            for pattern in engine_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    engine_size = match.group(1).strip().replace('[', '').replace(']', '')
+                    logger.debug(f"[PARSER] Found engine size: {engine_size}")
+                    break
+            
+            # Extract fuel type
+            fuel_type = "Unknown"
+            for pattern in fuel_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    fuel_type = match.group(1).strip().replace('[', '').replace(']', '')
+                    logger.debug(f"[PARSER] Found fuel type: {fuel_type}")
+                    break
+            
+            # Extract market segment
+            market_segment = "Unknown"
+            for pattern in segment_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    market_segment = match.group(1).strip().replace('[', '').replace(']', '')
+                    logger.debug(f"[PARSER] Found market segment: {market_segment}")
+                    break
+            
+            # Extract IDV range
+            idv_range = "Unknown"
+            for pattern in idv_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    idv_range = match.group(1).strip().replace('[', '').replace(']', '')
+                    logger.debug(f"[PARSER] Found IDV range: {idv_range}")
+                    break
+            
+            # Create detailed identification
+            if confidence > 0.85:
+                details = f"High confidence identification: {make} {model} ({year})"
+            elif confidence > 0.65:
                 details = f"Medium confidence identification: {make} {model}"
             else:
                 details = f"Low confidence identification - additional photos recommended"
@@ -231,6 +308,10 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
                 "year": year,
                 "trimLevel": trim_level,
                 "bodyStyle": body_style,
+                "engineSize": engine_size,
+                "fuelType": fuel_type,
+                "marketSegment": market_segment,
+                "idvRange": idv_range,
                 "confidence": confidence,
                 "identificationDetails": details
             }
@@ -239,6 +320,8 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             return {
                 "make": "Unknown", "model": "Unknown", "year": "Unknown",
                 "trimLevel": "Unknown", "bodyStyle": "Unknown", 
+                "engineSize": "Unknown", "fuelType": "Unknown",
+                "marketSegment": "Unknown", "idvRange": "Unknown",
                 "confidence": 0.5, "identificationDetails": "Could not parse vehicle information"
             }
     
@@ -353,9 +436,17 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
         """Determine primary damage type and confidence from AI response"""
         text_lower = text.lower()
         
+        logger.debug(f"[PARSER] Analyzing text for damage type: {text_lower[:200]}...")
+        
+        # Check for demo mode first
+        if "demo analysis" in text_lower or "api quota exceeded" in text_lower:
+            logger.info("[PARSER] Demo mode detected in response")
+            return "API Quota Exceeded", 0.0
+        
         # Check for "no damage" scenarios first
         no_damage_indicators = ['no damage', 'good condition', 'no visible damage', 'appears to be in good condition']
         if any(indicator in text_lower for indicator in no_damage_indicators):
+            logger.info("[PARSER] No damage detected in text")
             return "No Damage", 0.9
         
         # Common damage types with keywords
@@ -370,11 +461,18 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
         
         for keywords, damage_type in damage_types:
             if any(keyword in text_lower for keyword in keywords):
+                logger.info(f"[PARSER] Found damage type '{damage_type}' based on keyword match")
                 # Try to extract confidence
                 confidence_match = re.search(r'confidence[:\s]*(\d+(?:\.\d+)?)', text, re.IGNORECASE)
-                confidence = float(confidence_match.group(1)) / 100 if confidence_match else 0.85
+                if confidence_match:
+                    conf_value = float(confidence_match.group(1))
+                    # If confidence is > 1, it's likely a percentage, so divide by 100
+                    confidence = conf_value / 100 if conf_value > 1 else conf_value
+                else:
+                    confidence = 0.85
                 return damage_type, confidence
         
+        logger.info("[PARSER] No specific damage type found, defaulting to 'General Damage'")
         return "General Damage", 0.8
     
     def extract_recommendations(text: str) -> list:
@@ -404,6 +502,107 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             logger.error(f"[PARSER] Error extracting recommendations: {str(e)}")
             return ["Professional assessment recommended", "Document damage thoroughly"]
     
+    def extract_insurance_recommendations(text: str, vehicle_info: dict) -> dict:
+        """Extract vehicle-specific insurance recommendations from AI response"""
+        try:
+            logger.debug("[PARSER] Extracting insurance recommendations")
+            
+            # Extract claim recommendation
+            claim_patterns = [
+                r'CLAIM RECOMMENDATION[:\s]*([^\n]+)',
+                r'RECOMMENDATION[:\s]*([^\n]+)',
+                r'(CLAIM_RECOMMENDED|CLAIM_NOT_RECOMMENDED|CONDITIONAL_CLAIM)'
+            ]
+            
+            claim_recommendation = "CONDITIONAL_CLAIM"
+            for pattern in claim_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    claim_recommendation = match.group(1).strip().upper()
+                    logger.debug(f"[PARSER] Found claim recommendation: {claim_recommendation}")
+                    break
+            
+            # Extract reasoning
+            reasoning_patterns = [
+                r'RECOMMENDATION REASONING[:\s]*\n(.*?)(?=\n\*\*|$)',
+                r'REASONING[:\s]*\n(.*?)(?=\n\*\*|$)',
+                r'MODEL-SPECIFIC CONSIDERATIONS[:\s]*\n(.*?)(?=\n\*\*|$)'
+            ]
+            
+            reasoning = "Standard insurance claim analysis"
+            for pattern in reasoning_patterns:
+                match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
+                if match:
+                    reasoning = match.group(1).strip()
+                    logger.debug(f"[PARSER] Found reasoning: {reasoning[:100]}...")
+                    break
+            
+            # Extract vehicle-specific considerations
+            considerations_match = re.search(r'MODEL-SPECIFIC CONSIDERATIONS[:\s]*\n(.*?)(?=\n\*\*|$)', text, re.DOTALL | re.IGNORECASE)
+            vehicle_considerations = considerations_match.group(1).strip() if considerations_match else "General considerations apply"
+            
+            # Extract net benefit
+            benefit_match = re.search(r'Net Benefit[:\s]*₹([0-9,]+)', text, re.IGNORECASE)
+            net_benefit = benefit_match.group(1) if benefit_match else "0"
+            
+            # Extract deductible
+            deductible_match = re.search(r'(?:Deductible|deductible)[:\s]*₹([0-9,]+)', text, re.IGNORECASE)
+            deductible = deductible_match.group(1) if deductible_match else "2000"
+            
+            # Vehicle-specific insurance logic
+            vehicle_make = vehicle_info.get('make', 'Unknown').lower()
+            vehicle_year = vehicle_info.get('year', 'Unknown')
+            
+            # Adjust recommendations based on vehicle characteristics
+            premium_brands = ['bmw', 'mercedes', 'audi', 'jaguar', 'volvo', 'lexus']
+            economy_brands = ['maruti', 'hyundai', 'tata', 'mahindra']
+            
+            brand_factor = ""
+            if any(brand in vehicle_make for brand in premium_brands):
+                brand_factor = "Premium vehicle - higher repair costs, recommend comprehensive insurance coverage"
+            elif any(brand in vehicle_make for brand in economy_brands):
+                brand_factor = "Economy vehicle - consider repair costs vs vehicle value"
+            else:
+                brand_factor = "Mid-range vehicle - standard insurance considerations apply"
+            
+            # Age-based recommendations
+            age_factor = ""
+            try:
+                if vehicle_year != 'Unknown':
+                    vehicle_age = 2024 - int(vehicle_year)
+                    if vehicle_age <= 3:
+                        age_factor = "New vehicle - prioritize OEM parts and authorized service centers"
+                    elif vehicle_age <= 7:
+                        age_factor = "Mid-age vehicle - balance between OEM and aftermarket parts acceptable"
+                    else:
+                        age_factor = "Older vehicle - consider total loss threshold and IDV carefully"
+            except:
+                age_factor = "Vehicle age unknown - standard age considerations"
+            
+            return {
+                "claimRecommendation": claim_recommendation,
+                "reasoning": reasoning,
+                "vehicleConsiderations": vehicle_considerations,
+                "netBenefit": net_benefit,
+                "deductible": deductible,
+                "brandFactor": brand_factor,
+                "ageFactor": age_factor,
+                "isVehicleSpecific": True
+            }
+            
+        except Exception as e:
+            logger.error(f"[PARSER] Error extracting insurance recommendations: {str(e)}")
+            return {
+                "claimRecommendation": "CONDITIONAL_CLAIM",
+                "reasoning": "Could not parse insurance recommendations",
+                "vehicleConsiderations": "Standard considerations apply",
+                "netBenefit": "0",
+                "deductible": "2000",
+                "brandFactor": "Standard vehicle considerations",
+                "ageFactor": "Standard age considerations",
+                "isVehicleSpecific": False
+            }
+    
     try:
         # Extract main damage information
         damage_type, confidence = determine_damage_type_and_confidence(raw_analysis)
@@ -411,6 +610,7 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
         repair_costs = extract_repair_costs(raw_analysis)
         damage_regions = extract_damage_regions(raw_analysis)
         recommendations = extract_recommendations(raw_analysis)
+        insurance_info = extract_insurance_recommendations(raw_analysis, vehicle_id)
         
         # Use the full AI response as description
         description = raw_analysis.strip()
@@ -510,7 +710,8 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
                     "drivability": "SAFE",
                     "safetySystemImpacts": ["Monitor for warning indicators"],
                     "recommendations": ["Professional inspection recommended"]
-                }
+                },
+                "insuranceRecommendations": insurance_info
             }
         
         logger.info(f"[PARSER] Successfully parsed AI response into structured format: {damage_type}")
@@ -552,6 +753,13 @@ def firebase_auth_required(f):
                 'name': 'Development User',
                 'dev_mode': True
             }
+            # Ensure user profile exists for development user
+            try:
+                user_auth = UserAuth(request.app.config['db_ref'])
+                user_auth.ensure_user_profile(request.user['uid'], request.user)
+            except Exception as e:
+                logger.warning(f"DEV MODE: Could not create dev user profile: {str(e)}")
+            
             return f(*args, **kwargs)
             
         token = None
@@ -568,6 +776,13 @@ def firebase_auth_required(f):
                     'name': 'Development User (No Token)',
                     'dev_mode': True
                 }
+                # Ensure user profile exists for development user
+                try:
+                    user_auth = UserAuth(request.app.config['db_ref'])
+                    user_auth.ensure_user_profile(request.user['uid'], request.user)
+                except Exception as e:
+                    logger.warning(f"DEV MODE: Could not create dev user profile: {str(e)}")
+                
                 return f(*args, **kwargs)
             
             return jsonify({'error': 'Firebase token is missing'}), 401
@@ -576,6 +791,14 @@ def firebase_auth_required(f):
             # Verify Firebase token
             decoded_token = verify_firebase_token(token)
             request.user = decoded_token
+            
+            # Ensure user profile exists for authenticated user
+            try:
+                user_auth = UserAuth(request.app.config['db_ref'])
+                user_auth.ensure_user_profile(decoded_token['uid'], decoded_token)
+            except Exception as e:
+                logger.warning(f"Could not create user profile: {str(e)}")
+            
         except Exception as e:
             return jsonify({'error': str(e)}), 401
         
@@ -921,7 +1144,20 @@ def analyze_damage_upload():
     """Analyze car damage from uploaded image file using Gemini Vision AI"""
     logger.info("[ROUTE: /api/analyze-damage] Starting damage analysis from file upload")
     
+    # Rate limiting check
+    wait_time = global_rate_limiter.wait_if_needed()
+    if wait_time:
+        logger.warning(f"[RATE LIMIT] Request delayed by {wait_time:.2f} seconds")
+    
+    # Check if we're in development mode
+    dev_mode = os.getenv('DEV_MODE', 'false').lower() == 'true'
+    if dev_mode:
+        logger.info("🔧 [DEVELOPMENT MODE] Real Gemini analysis enabled with dev-friendly settings")
+    
     try:
+        # Record the request for rate limiting
+        global_rate_limiter.record_request()
+        
         # Check if image file is provided
         if 'image' not in request.files:
             logger.error("[ROUTE: /api/analyze-damage] No image file provided")
@@ -942,7 +1178,6 @@ def analyze_damage_upload():
             return jsonify({'error': 'Invalid file type. Please upload an image file.'}), 400
             
         # Create temporary file
-        import tempfile
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as temp_file:
             temp_path = temp_file.name
             image_file.save(temp_path)
@@ -951,8 +1186,13 @@ def analyze_damage_upload():
         
         try:
             # Analyze damage using Gemini Vision AI
+            if dev_mode:
+                logger.info("🔍 [DEVELOPMENT MODE] Starting REAL Gemini Vision AI analysis...")
             logger.debug("[ROUTE: /api/analyze-damage] Calling car_damage_rag.analyze_image")
             damage_analysis = car_damage_rag.analyze_image(temp_path)
+            
+            if dev_mode:
+                logger.info("✅ [DEVELOPMENT MODE] Real Gemini analysis completed successfully!")
             logger.info("[ROUTE: /api/analyze-damage] Damage analysis completed successfully")
             
             # Parse the AI response into structured format
@@ -961,9 +1201,28 @@ def analyze_damage_upload():
             # Store analysis in user's history if authenticated
             try:
                 user_auth = UserAuth(request.app.config['db_ref'])
+                
+                # Convert image to base64 for storage in history
+                import base64
+                with open(temp_path, 'rb') as img_file:
+                    img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+                    
                 analysis_record = {
-                    "timestamp": datetime.now().isoformat(),
+                    "id": f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    "userId": request.user['uid'],
+                    "uploadedAt": datetime.now().isoformat(),
                     "filename": image_file.filename,
+                    "image": img_base64,  # Store image as base64 data for history
+                    "result": {
+                        "damageType": structured_data.get("damageType", "Unknown"),
+                        "confidence": structured_data.get("confidence", 0),
+                        "damageDescription": structured_data.get("damageDescription", ""),
+                        "identifiedDamageRegions": structured_data.get("identifiedDamageRegions", []),
+                        "vehicleIdentification": structured_data.get("vehicleIdentification", {}),
+                        "enhancedRepairCost": structured_data.get("enhancedRepairCost", {}),
+                        "severity": "high" if structured_data.get("confidence", 0) > 0.8 else "medium" if structured_data.get("confidence", 0) > 0.5 else "low",
+                        "repairEstimate": structured_data.get("enhancedRepairCost", {}).get("conservative", {}).get("rupees", "N/A")
+                    },
                     "structured_data": structured_data,
                     "raw_analysis": damage_analysis["raw_analysis"]
                 }
@@ -981,9 +1240,32 @@ def analyze_damage_upload():
             }), 200
             
         except Exception as e:
-            logger.error(f"[ROUTE: /api/analyze-damage] Error in damage analysis: {str(e)}")
+            error_str = str(e)
+            logger.error(f"[ROUTE: /api/analyze-damage] Error in damage analysis: {error_str}")
             logger.error(traceback.format_exc())
-            return jsonify({'error': f"Analysis error: {str(e)}"}), 500
+            
+            # Check if this is a quota exceeded error
+            if "429" in error_str or "quota" in error_str.lower() or "rate limit" in error_str.lower():
+                logger.warning(f"[ROUTE: /api/analyze-damage] Quota exceeded error detected: {error_str}")
+                
+                # Extract retry delay if available
+                retry_delay_seconds = None
+                try:
+                    import re
+                    delay_match = re.search(r'retry_delay[^}]*seconds:\s*(\d+)', error_str)
+                    if delay_match:
+                        retry_delay_seconds = int(delay_match.group(1))
+                except:
+                    retry_delay_seconds = 60  # Default to 60 seconds
+                
+                return jsonify({
+                    'error': f"Analysis error: {error_str}",
+                    'quota_exceeded': True,
+                    'retry_delay_seconds': retry_delay_seconds or 60,
+                    'demo_mode': True
+                }), 429  # Return 429 instead of 500 for quota errors
+            
+            return jsonify({'error': f"Analysis error: {error_str}"}), 500
         
         finally:
             # Clean up temporary file
@@ -1027,11 +1309,292 @@ def get_insurance():
 def get_analysis_history():
     """Get user's analysis history"""
     try:
-        user_auth = UserAuth(request.app.config['db_ref'])
-        history = user_auth.get_analysis_history(request.user['uid'])
+        from flask import current_app
+        logger.info(f"📊 get_analysis_history: Request received from user {request.user.get('uid', 'unknown')}")
+        logger.info(f"🔍 get_analysis_history: Request headers: {dict(request.headers)}")
+        logger.info(f"👤 get_analysis_history: User info: {request.user}")
+        
+        try:
+            # Check if db_ref exists in app config
+            if 'db_ref' not in current_app.config:
+                logger.error("❌ get_analysis_history: No database reference in app config")
+                return jsonify({'error': 'Database reference not configured', 'success': False}), 500
+                
+            user_auth = UserAuth(current_app.config['db_ref'])
+            
+            # Make sure user ID is available
+            if not request.user or 'uid' not in request.user:
+                logger.error("❌ get_analysis_history: No user ID available in request")
+                return jsonify({'error': 'User not authenticated', 'success': False}), 401
+                
+            user_id = request.user['uid']
+            
+            # Extract auth token from request headers
+            auth_header = request.headers.get('Authorization', '')
+            auth_token = None
+            if auth_header.startswith('Bearer '):
+                auth_token = auth_header.split(' ')[1]
+                logger.info(f"🔐 get_analysis_history: Auth token extracted for Firebase REST API")
+            
+            logger.info(f"🗃️ get_analysis_history: Fetching history for user_id: {user_id}")
+            history = user_auth.get_analysis_history(user_id, auth_token=auth_token)
+            
+            logger.info(f"✅ get_analysis_history: Successfully fetched history")
+            logger.info(f"📈 get_analysis_history: History type: {type(history)}, length: {len(history) if isinstance(history, (list, dict)) else 'unknown'}")
+            
+            if isinstance(history, dict):
+                logger.info(f"🔑 get_analysis_history: History keys: {list(history.keys())[:5] if history else '[]'}...")
+                
+                # Convert Firebase-style dict to a list for easier frontend processing
+                if history:
+                    history_list = []
+                    for key, value in history.items():
+                        # Add the Firebase key as id field in each item
+                        if isinstance(value, dict):
+                            value['id'] = key
+                        else:
+                            value = {'id': key, 'data': value}
+                        history_list.append(value)
+                    
+                    # Sort by timestamp if available
+                    history_list.sort(
+                        key=lambda x: x.get('timestamp', x.get('created_at', '')), 
+                        reverse=True
+                    )
+                    
+                    logger.info(f"📋 get_analysis_history: Converted to list with {len(history_list)} items")
+                    return jsonify({'data': history_list, 'success': True}), 200
+                else:
+                    logger.info("📋 get_analysis_history: No history found, returning empty list")
+                    return jsonify({'data': [], 'success': True}), 200
+            elif isinstance(history, list):
+                logger.info(f"📋 get_analysis_history: History items count: {len(history)}")
+                return jsonify({'data': history, 'success': True}), 200
+            else:
+                logger.warning(f"⚠️ get_analysis_history: Unexpected history type: {type(history)}")
+                return jsonify({'data': [], 'success': True}), 200
+                
+        except Exception as e:
+            logger.error(f"💥 get_analysis_history: Unexpected error: {str(e)}")
+            logger.error(f"📚 get_analysis_history: Error traceback: {traceback.format_exc()}")
+            return jsonify({'error': str(e), 'success': False}), 500
+            
         return jsonify(history), 200
+        
     except Exception as e:
+        logger.error(f"💥 get_analysis_history: Error occurred: {str(e)}")
+        logger.error(f"📚 get_analysis_history: Error traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
+
+@api.route('/user/profile', methods=['GET'])
+@firebase_auth_required
+def get_user_profile():
+    """Get user profile"""
+    try:
+        from flask import current_app
+        logger.info(f"👤 get_user_profile: Request received from user {request.user.get('uid', 'unknown')}")
+        
+        if 'db_ref' not in current_app.config:
+            logger.error("❌ get_user_profile: No database reference in app config")
+            return jsonify({'error': 'Database reference not configured', 'success': False}), 500
+            
+        user_auth = UserAuth(current_app.config['db_ref'])
+        user_id = request.user['uid']
+        
+        try:
+            profile = user_auth.get_user_profile(user_id)
+            logger.info(f"✅ get_user_profile: Successfully fetched profile for user {user_id}")
+            return jsonify({'data': profile, 'success': True}), 200
+        except Exception as e:
+            if "User not found" in str(e):
+                logger.info(f"👤 get_user_profile: User profile not found, creating new profile for user {user_id}")
+                
+                # Create default profile with user data from Firebase Auth
+                default_profile = {
+                    'uid': user_id,
+                    'email': request.user.get('email', ''),
+                    'display_name': request.user.get('name', ''),
+                    'profile_created': datetime.now().isoformat(),
+                    'profile_updated': datetime.now().isoformat()
+                }
+                
+                # Create the profile
+                current_app.config['db_ref'].child('users').child(user_id).child('profile').set(default_profile)
+                logger.info(f"✅ get_user_profile: Created new profile for user {user_id}")
+                
+                return jsonify({'data': default_profile, 'success': True}), 200
+            else:
+                logger.error(f"💥 get_user_profile: Error fetching profile: {str(e)}")
+                return jsonify({'error': str(e), 'success': False}), 500
+                
+    except Exception as e:
+        logger.error(f"💥 get_user_profile: Error occurred: {str(e)}")
+        logger.error(f"📚 get_user_profile: Error traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/user/profile', methods=['PUT'])
+@firebase_auth_required
+def update_user_profile():
+    """Update user profile"""
+    try:
+        from flask import current_app
+        logger.info(f"🔄 update_user_profile: Request received from user {request.user.get('uid', 'unknown')}")
+        
+        if 'db_ref' not in current_app.config:
+            logger.error("❌ update_user_profile: No database reference in app config")
+            return jsonify({'error': 'Database reference not configured', 'success': False}), 500
+            
+        user_auth = UserAuth(current_app.config['db_ref'])
+        user_id = request.user['uid']
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided', 'success': False}), 400
+            
+        # Add update timestamp
+        data['profile_updated'] = datetime.now().isoformat()
+        
+        user_auth.update_user_profile(user_id, data)
+        logger.info(f"✅ update_user_profile: Successfully updated profile for user {user_id}")
+        
+        return jsonify({'success': True}), 200
+        
+    except Exception as e:
+        logger.error(f"💥 update_user_profile: Error occurred: {str(e)}")
+        logger.error(f"📚 update_user_profile: Error traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/user/ensure-profile', methods=['POST'])
+@firebase_auth_required
+def ensure_user_profile():
+    """Ensure user profile exists, create if it doesn't"""
+    try:
+        from flask import current_app
+        logger.info(f"🔍 ensure_user_profile: Checking profile for user {request.user.get('uid', 'unknown')}")
+        
+        if 'db_ref' not in current_app.config:
+            logger.error("❌ ensure_user_profile: No database reference in app config")
+            return jsonify({'error': 'Database reference not configured', 'success': False}), 500
+            
+        user_id = request.user['uid']
+        
+        # Check if user profile exists
+        profile = current_app.config['db_ref'].child('users').child(user_id).child('profile').get()
+        
+        if not profile:
+            logger.info(f"👤 ensure_user_profile: Creating new profile for user {user_id}")
+            
+            # Get additional data from request body if provided
+            data = request.get_json() or {}
+            
+            # Create default profile with user data from Firebase Auth
+            default_profile = {
+                'uid': user_id,
+                'email': request.user.get('email', ''),
+                'display_name': request.user.get('name', ''),
+                'profile_created': datetime.now().isoformat(),
+                'profile_updated': datetime.now().isoformat(),
+                **data  # Include any additional data provided
+            }
+            
+            # Create the profile
+            current_app.config['db_ref'].child('users').child(user_id).child('profile').set(default_profile)
+            logger.info(f"✅ ensure_user_profile: Created new profile for user {user_id}")
+            
+            return jsonify({'data': default_profile, 'success': True, 'created': True}), 200
+        else:
+            logger.info(f"✅ ensure_user_profile: Profile already exists for user {user_id}")
+            return jsonify({'data': profile, 'success': True, 'created': False}), 200
+            
+    except Exception as e:
+        logger.error(f"💥 ensure_user_profile: Error occurred: {str(e)}")
+        logger.error(f"📚 ensure_user_profile: Error traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/debug/user-data', methods=['GET'])
+@firebase_auth_required
+def debug_user_data():
+    """Debug endpoint to check user data"""
+    try:
+        from flask import current_app
+        user_id = request.user['uid']
+        logger.info(f"🔍 debug_user_data: Debug request for user {user_id}")
+        
+        if 'db_ref' not in current_app.config:
+            return jsonify({'error': 'Database reference not configured'}), 500
+        
+        db_ref = current_app.config['db_ref']
+        
+        # Check if user exists in database
+        user_data = db_ref.child('users').child(user_id).get()
+        
+        # Check all users in database
+        all_users = db_ref.child('users').get()
+        user_keys = list(all_users.keys()) if all_users else []
+        
+        debug_info = {
+            'current_user_id': user_id,
+            'user_exists': user_data is not None,
+            'user_data': user_data,
+            'all_user_keys': user_keys,
+            'total_users': len(user_keys),
+            'auth_info': {
+                'email': request.user.get('email'),
+                'name': request.user.get('name'),
+                'firebase_uid': request.user.get('uid')
+            }
+        }
+        
+        logger.info(f"🔍 debug_user_data: Debug info compiled")
+        return jsonify(debug_info), 200
+        
+    except Exception as e:
+        logger.error(f"💥 debug_user_data: Error occurred: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/debug/migrate-data', methods=['POST'])
+@firebase_auth_required
+def migrate_user_data():
+    """Debug endpoint to migrate data from old user ID to new user ID"""
+    try:
+        from flask import current_app
+        current_user_id = request.user['uid']
+        data = request.get_json()
+        old_user_id = data.get('old_user_id')
+        
+        if not old_user_id:
+            return jsonify({'error': 'old_user_id is required'}), 400
+        
+        logger.info(f"🔄 migrate_user_data: Migrating data from {old_user_id} to {current_user_id}")
+        
+        if 'db_ref' not in current_app.config:
+            return jsonify({'error': 'Database reference not configured'}), 500
+        
+        db_ref = current_app.config['db_ref']
+        
+        # Get old user data
+        old_user_data = db_ref.child('users').child(old_user_id).get()
+        
+        if not old_user_data:
+            return jsonify({'error': f'No data found for user {old_user_id}'}), 404
+        
+        # Copy data to new user ID
+        db_ref.child('users').child(current_user_id).set(old_user_data)
+        
+        # Optionally remove old data (commented out for safety)
+        # db_ref.child('users').child(old_user_id).delete()
+        
+        logger.info(f"✅ migrate_user_data: Successfully migrated data from {old_user_id} to {current_user_id}")
+        return jsonify({
+            'success': True,
+            'migrated_from': old_user_id,
+            'migrated_to': current_user_id,
+            'data_keys': list(old_user_data.keys()) if isinstance(old_user_data, dict) else []
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"💥 migrate_user_data: Error occurred: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @api.route('/vehicle/info', methods=['GET'])
 def get_vehicle_info():
@@ -1063,7 +1626,7 @@ def estimate_repair_cost():
         
         logger.info(f"Estimating repair cost for {make} {model} with {damage_type} damage")
         repair_cost = vehicle_rag.estimate_repair_cost(make, model, damage_type)
-        return jsonify(repair_cost), 200
+        return jsonify(repair_cost),  200
     except Exception as e:
         logger.error(f"Error estimating repair cost: {str(e)}")
         logger.error(traceback.format_exc())
@@ -1081,6 +1644,7 @@ def get_insurance_recommendations():
         logger.info(f"Getting insurance recommendations for damage assessment")
         recommendations = insurance_rag.get_insurance_recommendations(damage_assessment)
         return jsonify(recommendations), 200
+
     except Exception as e:
         logger.error(f"Error getting insurance recommendations: {str(e)}")
         logger.error(traceback.format_exc())
@@ -1101,6 +1665,7 @@ def get_repair_recommendations():
         return jsonify({'error': str(e)}), 500
 
 @api.route('/analyze/gemini-only', methods=['POST'])
+@firebase_auth_required
 def analyze_with_gemini_only():
     """Analyze car damage using only Gemini API - no mock data fallbacks"""
     logger.info("[ROUTE: /api/analyze/gemini-only] Starting Gemini-only damage analysis")
@@ -1123,34 +1688,44 @@ def analyze_with_gemini_only():
                     # Read and process the uploaded image
                     logger.debug("[ROUTE: /api/analyze/gemini-only] Reading uploaded image file")
                     contents = file.read()
-                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Image content read, size: {len(contents)} bytes")
                     
                     logger.debug("[ROUTE: /api/analyze/gemini-only] Opening image with PIL")
                     image = Image.open(io.BytesIO(contents))
                     logger.info(f"[ROUTE: /api/analyze/gemini-only] Image opened successfully, format: {image.format}, size: {image.size}")
                     
-                    # Save temporarily
+                    # Resize if needed to meet Gemini's requirements
+                    total_pixels = image.size[0] * image.size[1]
+                    if total_pixels > 1920 * 1080:  # If larger than ~2MP
+                        ratio = math.sqrt((1920 * 1080) / total_pixels)
+                        new_size = tuple(int(dim * ratio) for dim in image.size)
+                        image = image.resize(new_size, Image.LANCZOS)
+                        logger.info(f"[ROUTE: /api/analyze/gemini-only] Resized image to: {new_size}")
+                    
+                    # Save temporarily with compression
                     temp_path = f"temp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Saving temporary image to: {temp_path}")
-                    image.save(temp_path)
-                    logger.info(f"[ROUTE: /api/analyze/gemini-only] Saved temporary image: {temp_path}")
+                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Saving optimized image to: {temp_path}")
+                    image.save(temp_path, 'JPEG', quality=85, optimize=True)
+                    logger.info(f"[ROUTE: /api/analyze/gemini-only] Saved optimized image: {temp_path}")
                     
                 except Exception as e:
                     logger.error(f"[ROUTE: /api/analyze/gemini-only] Error processing uploaded image: {str(e)}")
                     logger.error(traceback.format_exc())
-                    return jsonify({'error': f"Image processing error: {str(e)}"}), 500
-        
-        # If no uploaded file, try imageUrl parameter as fallback
-        if image is None and 'imageUrl' in request.form:
-            image_url = request.form['imageUrl']
-            logger.info(f"[ROUTE: /api/analyze/gemini-only] Using imageUrl fallback: {image_url}")
+                    return jsonify({'error': f"Error processing uploaded image: {str(e)}"}), 400
+                    
+        # If no file uploaded, try image URL
+        if not image and 'imageUrl' in request.json:
+            image_url = request.json['imageUrl']
+            logger.info(f"[ROUTE: /api/analyze/gemini-only] Processing image from URL: {image_url}")
             
             try:
-                # Check if the file exists
-                if os.path.exists(image_url):
-                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Loading image from path: {image_url}")
+                if image_url.startswith(('http://', 'https://')):
+                    # Download image from URL
+                    response = requests.get(image_url, timeout=10)
+                    response.raise_for_status()
+                    image = Image.open(io.BytesIO(response.content))
+                elif os.path.exists(image_url):
+                    # Load local file
                     image = Image.open(image_url)
-                    temp_path = image_url  # Use existing path
                     logger.info(f"[ROUTE: /api/analyze/gemini-only] Image loaded from path successfully, format: {image.format}, size: {image.size}")
                 else:
                     logger.error(f"[ROUTE: /api/analyze/gemini-only] Image file not found at path: {image_url}")
@@ -1166,212 +1741,276 @@ def analyze_with_gemini_only():
             logger.error("[ROUTE: /api/analyze/gemini-only] No valid image provided (neither uploaded file nor valid imageUrl)")
             return jsonify({'error': 'No valid image provided. Please upload an image file or provide a valid image path.'}), 400
 
-        # Check for API key availability
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            logger.error("[ROUTE: /api/analyze/gemini-only] No Gemini API key found")
-            return jsonify({'error': 'Gemini API key not configured. Set GEMINI_API_KEY environment variable.'}), 503
-        
+        # Initialize Car Damage RAG system
         try:
-            # Import and use directly with no fallbacks
-            from backend.rag_implementation.car_damage_rag import CarDamageRAG
-            from backend.rag_implementation.insurance_rag import InsuranceRAG
-            from backend.rag_implementation.vehicle_rag import VehicleRAG
-            
-            # Initialize components
             car_damage_analyzer = CarDamageRAG()
-            vehicle_analyzer = VehicleRAG()
-            insurance_analyzer = InsuranceRAG()
+            analysis = car_damage_analyzer.analyze_image(temp_path if temp_path else image_url)
             
-            # Force Gemini use
-            if hasattr(car_damage_analyzer, "_use_mock"):
-                car_damage_analyzer._use_mock = False
-            if hasattr(vehicle_analyzer, "_use_mock"):
-                vehicle_analyzer._use_mock = False
-            if hasattr(insurance_analyzer, "_use_mock"):
-                insurance_analyzer._use_mock = False
+            logger.info("[ROUTE: /api/analyze/gemini-only] Successfully analyzed image with Car Damage RAG")
             
-            # Convert image for direct use with Gemini
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='JPEG')
-            img_bytes = img_byte_arr.getvalue()
+            # Extract key information
+            confidence = analysis.get('confidence', 0.4)
+            damage_regions = analysis.get('identifiedDamageRegions', [])
+            raw_analysis = analysis.get('raw_analysis', '')
             
-            # Direct API call to Gemini with enhanced insurance prompts
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(
-                contents=[
-                    """🚗 EXPERT AUTOMOTIVE DAMAGE ANALYST & INSURANCE SPECIALIST
-
-You are a certified automotive damage assessor and senior insurance specialist with 25+ years of experience. Analyze this vehicle image with the precision of a professional adjuster and provide a comprehensive, actionable report.
-
-📋 VEHICLE IDENTIFICATION & ASSESSMENT:
-- FIRST: Identify make, model, year, trim level, and approximate value range
-- Document vehicle condition prior to damage assessment
-- Note any pre-existing wear, modifications, or maintenance indicators
-- Assess overall vehicle age and mileage appearance
-
-🔍 COMPREHENSIVE DAMAGE ANALYSIS:
-- Map ALL visible damage with precise locations (use clock positions: 12 o'clock = front, 3 o'clock = passenger side, etc.)
-- Categorize each damage type: Surface scratches, deep scratches, paint transfer, dents, creases, cracks, structural deformation
-- Rate severity: MINOR (cosmetic only), MODERATE (functional impact possible), SEVERE (safety/structural concerns), CRITICAL (unsafe to drive)
-- Identify potential hidden damage based on impact patterns and force distribution
-- Assess whether damage extends beyond visible areas (frame, suspension, electrical systems)
-
-💰 DETAILED FINANCIAL ASSESSMENT:
-REPAIR COST BREAKDOWN:
-- Parts costs (OEM vs aftermarket pricing)
-- Labor hours required (body shop rates: $45-120/hour)
-- Paint and materials ($200-800 depending on coverage area)
-- Specialty services (frame straightening, wheel alignment, etc.)
-- Total estimated range: $XXX - $XXX
-
-INSURANCE CLAIM ANALYSIS:
-- Claim threshold assessment (typically $500-1500 depending on policy)
-- Deductible impact calculation
-- Premium increase probability (0-30% for 3-5 years)
-- Total cost of ownership impact over 5 years
-- Recommendation: CLAIM vs. PAY OUT-OF-POCKET with detailed reasoning
-
-🛠️ EXPERT REPAIR STRATEGY:
-REPAIR METHOD RECOMMENDATIONS:
-- Paintless Dent Repair (PDR) viability assessment
-- Traditional body work requirements
-- Parts replacement vs. repair feasibility
-- Quality levels: Insurance-grade vs. Premium restoration
-- Timeline: Rush (2-3 days) vs. Standard (1-2 weeks) vs. Show Quality (3-4 weeks)
-
-SHOP SELECTION GUIDANCE:
-- Certified shops (manufacturer authorized) vs. independent shops
-- Insurance Direct Repair Program (DRP) considerations
-- Quality indicators to look for in shop selection
-- Questions to ask potential repair facilities
-
-⚠️ SAFETY & LEGAL COMPLIANCE:
-IMMEDIATE SAFETY ASSESSMENT:
-- Vehicle drivability status: SAFE / CAUTION / UNSAFE
-- Critical systems affected (lights, mirrors, structural integrity)
-- Legal roadworthiness in your jurisdiction
-- Emergency repairs needed before driving
-
-REGULATORY COMPLIANCE:
-- Inspection requirements post-repair
-- Documentation needed for legal compliance
-- Safety equipment functionality verification
-
-📞 STEP-BY-STEP INSURANCE CLAIM PROCESS:
-1. IMMEDIATE ACTIONS (First 24 hours):
-   - Document scene with photos from multiple angles
-   - Collect other party information (if applicable)
-   - Contact insurance company to report claim
-   - Get police report number (if applicable)
-
-2. DOCUMENTATION REQUIRED:
-   - High-resolution photos: Overview, close-ups, interior damage, VIN
-   - Repair estimates from 2-3 certified shops
-   - Police report (if applicable)
-   - Witness statements (if applicable)
-
-3. ADJUSTER INTERACTION STRATEGY:
-   - Key points to emphasize during inspection
-   - Hidden damage areas to highlight
-   - Negotiation tactics for maximum coverage
-   - When to request re-inspection
-
-4. OPTIMAL TIMING CONSIDERATIONS:
-   - Best times to file claim (avoid holiday periods)
-   - Coordination with repair shop schedules
-   - Rental car arrangement timing
-
-🎯 PERSONALIZED RECOMMENDATIONS:
-Based on this specific damage assessment, provide:
-- YOUR TOP RECOMMENDATION: Claim or pay out-of-pocket with specific reasoning
-- Estimated total financial impact over 5 years
-- Preferred repair approach for optimal value
-- Timeline recommendations based on urgency
-- Preventive measures to avoid similar damage
-
-📊 RISK ASSESSMENT MATRIX:
-- Probability of successful claim: XX%
-- Expected premium increase: XX% for XX years
-- Total 5-year cost impact: $XXX
-- Resale value impact: $XXX reduction
-- Recommended action confidence level: XX%
-
-FORMAT: Provide response in clearly labeled sections with specific dollar amounts, percentages, and actionable steps. Use emojis for section headers and bullet points for easy scanning. Be precise with all estimates and provide ranges where appropriate.""",
-                    {"mime_type": "image/jpeg", "data": img_bytes}
-                ]
-            )
-            
-            logger.info("[ROUTE: /api/analyze/gemini-only] Direct Gemini analysis successful")
-            
-            # Clean up temp file if we created one
-            try:
-                if temp_path and temp_path.startswith('temp_') and os.path.exists(temp_path):
-                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Removing temporary file: {temp_path}")
-                    os.remove(temp_path)
-                else:
-                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Skipping cleanup - using existing file or no temp file created")
-            except Exception as e:
-                logger.warning(f"[ROUTE: /api/analyze/gemini-only] Error removing temp file: {str(e)}")
-            
-            # Parse the response to extract analysis and recommendations
-            analysis_text = response.text
-            
-            # Try to extract recommendations from the response
+            # Parse recommendations from analysis text
             recommendations = []
-            analysis_parts = analysis_text.split('\n')
-            
-            # Look for bullet points or numbered lists that could be recommendations
-            in_recommendations = False
             current_analysis = []
+            section_lines = raw_analysis.split('\n')
+            in_recommendations = False
             
-            for line in analysis_parts:
+            for line in section_lines:
                 line = line.strip()
                 if not line:
                     continue
                     
-                # Check if this line indicates start of recommendations
-                if any(keyword in line.lower() for keyword in ['recommendation', 'suggest', 'should', 'action']):
+                # Look for recommendation sections
+                if any(keyword in line.lower() for keyword in ['recommendation', 'suggest', 'should', 'repair', 'next steps']):
                     in_recommendations = True
-                    
-                # If line starts with bullet points, numbers, or dashes, treat as recommendation
-                if line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')) or in_recommendations:
-                    if line.startswith(('•', '-', '*')):
-                        recommendations.append(line[1:].strip())
-                    elif line[0].isdigit() and '.' in line[:3]:
-                        recommendations.append(line.split('.', 1)[1].strip())
-                    elif in_recommendations:
-                        recommendations.append(line)
+                elif line.startswith(('💰', '⚠️', '📋')):  # New section markers
+                    in_recommendations = False
+                
+                if in_recommendations:
+                    if line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')):
+                        clean_line = line.lstrip('•-* 123456789.').strip()
+                        if clean_line:
+                            recommendations.append(clean_line)
                 else:
                     current_analysis.append(line)
             
-            # If no specific recommendations found, create some based on the analysis
+            # If no specific recommendations found, create default ones
             if not recommendations:
-                if 'damage' in analysis_text.lower():
+                if damage_regions:
                     recommendations = [
-                        "Consult with a professional auto body shop for detailed assessment",
-                        "Document all damage with photos for insurance purposes",
-                        "Get multiple repair quotes before proceeding",
-                        "Check if any safety systems are affected"
+                        "Professional inspection recommended for detailed assessment",
+                        "Document all damage with photos for insurance",
+                        "Get multiple repair quotes from certified shops",
+                        "Check impact on safety systems and structural integrity"
+                    ]
+                else:
+                    recommendations = [
+                        "No immediate action required - vehicle appears undamaged",
+                        "Continue regular maintenance schedule",
+                        "Keep photo record for future reference",
+                        "Consider periodic professional inspections"
                     ]
             
-            # Return structured response that matches frontend expectations
+            # Clean up temp file if it exists
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                    logger.debug(f"[ROUTE: /api/analyze/gemini-only] Cleaned up temp file: {temp_path}")
+                except Exception as e:
+                    logger.warning(f"[ROUTE: /api/analyze/gemini-only] Error removing temp file: {str(e)}")
+            
+            # Parse the raw analysis to structured format
+            logger.info("[ROUTE: /api/analyze/gemini-only] Converting raw analysis to structured format")
+            structured_data = parse_ai_response_to_damage_result(raw_analysis)
+            
+            # Override with actual analysis data
+            structured_data.update({
+                'confidence': confidence,
+                'identifiedDamageRegions': damage_regions,
+                'recommendations': recommendations
+            })
+            
+            # Save analysis to user's history if authenticated
+            try:
+                # Check for dev mode or authentication
+                user_id = None
+                if hasattr(request, 'user') and request.user:
+                    user_id = request.user.get('uid')
+                elif request.headers.get('X-Dev-Auth-Bypass') == 'true':
+                    user_id = 'dev-user-123'  # Default dev user
+                
+                if user_id:
+                    user_auth = UserAuth(request.app.config['db_ref'])
+                    
+                    # Convert image to base64 for storage in history
+                    import base64
+                    img_data_url = None
+                    if image:
+                        # Convert PIL image to base64
+                        buffer = io.BytesIO()
+                        image.save(buffer, format='JPEG', quality=85)
+                        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                        img_data_url = f"data:image/jpeg;base64,{img_base64}"
+                    
+                    analysis_record = {
+                        "id": f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                        "userId": user_id,
+                        "uploadedAt": datetime.now().isoformat(),
+                        "filename": getattr(request.files.get('image'), 'filename', 'uploaded_image.jpg'),
+                        "image": img_data_url,  # Store image as base64 data URL
+                        "result": {
+                            "damageType": structured_data.get("damageType", "Unknown"),
+                            "confidence": confidence,
+                            "damageDescription": structured_data.get("damageDescription", ""),
+                            "identifiedDamageRegions": damage_regions,
+                            "vehicleIdentification": structured_data.get("vehicleIdentification", {}),
+                            "enhancedRepairCost": structured_data.get("enhancedRepairCost", {}),
+                            "severity": "high" if confidence > 0.8 else "medium" if confidence > 0.5 else "low",
+                            "repairEstimate": structured_data.get("enhancedRepairCost", {}).get("conservative", {}).get("rupees", "N/A")
+                        },
+                        "structured_data": structured_data,
+                        "raw_analysis": raw_analysis
+                    }
+                    user_auth.add_analysis_history(user_id, analysis_record)
+                    logger.info(f"[ROUTE: /api/analyze/gemini-only] Analysis saved to user history for {user_id}")
+            except Exception as history_error:
+                logger.warning(f"[ROUTE: /api/analyze/gemini-only] Could not save to history: {str(history_error)}")
+            
+            # Return structured response in expected format
             return jsonify({
-                'analysis': ' '.join(current_analysis) if current_analysis else analysis_text,
-                'recommendations': recommendations,
-                'additionalInfo': {
-                    'model': 'gemini-1.5-flash',
-                    'confidence': 'High',
-                    'analysisType': 'Advanced AI Analysis'
-                },
-                'rawResponse': analysis_text
+                'data': {
+                    'raw_analysis': raw_analysis,
+                    'structured_data': structured_data
+                }
             }), 200
             
         except Exception as e:
             logger.error(f"[ROUTE: /api/analyze/gemini-only] Error in Gemini analysis: {str(e)}")
             logger.error(traceback.format_exc())
-            return jsonify({'error': f"Gemini API error: {str(e)}"}), 500
+            
+            # Check if this is a quota exceeded error (429)
+            error_str = str(e)
+            if "429" in error_str or "quota" in error_str.lower() or "ResourceExhausted" in error_str:
+                # Extract retry delay if available
+                retry_delay_match = re.search(r'retry_delay.*?seconds:\s*(\d+)', error_str)
+                retry_delay = retry_delay_match.group(1) if retry_delay_match else "60"
+                
+                logger.info("[ROUTE: /api/analyze/gemini-only] Quota exceeded, using smart local analysis")
+                
+                # Use smart local analysis instead of random demo
+                try:
+                    smart_analysis = create_smart_demo_response(temp_path)
+                    demo_analysis = smart_analysis['description']
+                    
+                    # Use the actual detected regions from local analysis
+                    detected_regions = smart_analysis.get('damage_regions', [])
+                    
+                    # Create structured demo data based on local analysis
+                    structured_data = parse_ai_response_to_damage_result(demo_analysis)
+                    structured_data.update({
+                        'confidence': smart_analysis['confidence'],
+                        'damageType': smart_analysis['damageType'],
+                        'damageDescription': f"{smart_analysis['damageType']} detected using local analysis",
+                        'identifiedDamageRegions': detected_regions,  # Use actual detected regions
+                        'recommendations': [
+                            "This analysis uses local computer vision (Gemini API unavailable)",
+                            "Professional inspection recommended for detailed assessment",
+                            "Get multiple repair quotes from certified garages",
+                            "Document damage with additional photos for insurance",
+                            f"Gemini API quota exceeded - wait {retry_delay} seconds or upgrade plan"
+                        ],
+                        'isDemoMode': True,
+                        'isLocalAnalysis': True
+                    })
+                    
+                    logger.info(f"[ROUTE] Smart local analysis completed: {len(detected_regions)} regions detected")
+                    
+                except Exception as local_error:
+                    logger.error(f"Local analysis failed: {str(local_error)}")
+                    # Fallback to simple demo response
+                    demo_scenarios = [
+                        {
+                            "damageType": "Minor Scratch",
+                            "description": "Light surface scratch detected on front bumper",
+                            "severity": "Minor",
+                            "cost_rupees": "₹3,500",
+                            "cost_dollars": "$42"
+                        },
+                        {
+                            "damageType": "Small Dent",
+                            "description": "Minor dent detected on side panel",
+                            "severity": "Minor",
+                            "cost_rupees": "₹4,500",
+                            "cost_dollars": "$54"
+                        },
+                        {
+                            "damageType": "Paint Damage",
+                            "description": "Paint damage detected on rear section",
+                            "severity": "Moderate",
+                            "cost_rupees": "₹6,000",
+                            "cost_dollars": "$72"
+                        }
+                    ]
+                    
+                    # Select random scenario for variety
+                    scenario = random.choice(demo_scenarios)
+                    
+                    # Provide a demo response when quota is exceeded
+                    demo_analysis = f"""
+🚗 DEMO ANALYSIS (API Quota Exceeded)
+
+📋 VEHICLE IDENTIFICATION:
+Make: Demo Vehicle
+Model: Sample Car
+Year: 2020
+Confidence: MEDIUM (70%)
+
+🔍 DAMAGE ASSESSMENT:
+Primary Damage: {scenario['damageType']}
+Location: Vehicle exterior
+Severity: {scenario['severity']}
+Confidence: 70%
+
+Description: {scenario['description']}
+
+💰 REPAIR COST ESTIMATE:
+Conservative: {scenario['cost_rupees']} ({scenario['cost_dollars']})
+Comprehensive: ₹{int(scenario['cost_rupees'].replace('₹', '').replace(',', '')) + 2000:,} (${int(scenario['cost_dollars'].replace('$', '')) + 25})
+
+📝 RECOMMENDATIONS:
+• This is a demo response due to API quota limits
+• Professional inspection recommended for accurate assessment
+• Get multiple repair quotes from certified garages
+• Document damage with additional photos for insurance
+• Consider the extent of damage before filing a claim
+
+⚠️ Note: This is a demonstration response. Actual API quota exceeded.
+Please wait {retry_delay} seconds before trying again or upgrade your API plan.
+
+The Gemini API has exceeded its quota. This demo shows sample damage analysis capabilities.
+"""
+                    
+                    # Create structured demo data
+                    structured_data = parse_ai_response_to_damage_result(demo_analysis)
+                    structured_data.update({
+                        'confidence': 0.7,
+                        'damageType': scenario['damageType'],
+                        'damageDescription': scenario['description'],
+                        'identifiedDamageRegions': [
+                            {
+                                'x': random.randint(50, 150), 
+                                'y': random.randint(100, 200), 
+                                'width': random.randint(60, 100), 
+                                'height': random.randint(40, 80),
+                                'damageType': scenario['damageType'], 
+                                'confidence': 0.7
+                            }
+                        ],
+                        'recommendations': [
+                            "This is a demo response due to API quota limits",
+                            "Professional inspection recommended for accurate assessment",
+                            "Get multiple repair quotes from certified garages",
+                            "Document damage with additional photos for insurance",
+                            f"Please wait {retry_delay} seconds before trying again"
+                        ],
+                        'isDemoMode': True
+                    })
+                
+                return jsonify({
+                    'data': {
+                        'raw_analysis': demo_analysis,
+                        'structured_data': structured_data
+                    },
+                    'demo_mode': True,
+                    'quota_exceeded': True,
+                    'retry_delay_seconds': int(retry_delay)
+                }), 200
+            else:
+                return jsonify({'error': f"Gemini API error: {str(e)}"}), 500
         
     except Exception as e:
         logger.error(f"[ROUTE: /api/analyze/gemini-only] Unhandled error: {str(e)}")
@@ -1412,6 +2051,7 @@ def get_latest_analysis_techniques():
         3. AI and ML applications in damage assessment
         4. Latest repair methodologies
         5. Industry standards and best practices
+        
         6. Recent innovations in the field
         7. Mobile-based assessment methods
         8. Predictive damage analysis
@@ -1491,3 +2131,299 @@ def health_check():
             'vehicle_rag': 'initialized' if 'vehicle_rag' in globals() else 'not initialized'
         }
     })
+
+@api.route('/analysis/save', methods=['POST'])
+@firebase_auth_required
+def save_analysis_result():
+    """Save analysis result to user's history"""
+    try:
+        from flask import current_app
+        logger.info(f"💾 save_analysis_result: Request received from user {request.user.get('uid', 'unknown')}")
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        user_auth = UserAuth(current_app.config['db_ref'])
+        user_id = request.user['uid']
+        
+        # Add timestamp and user ID to the analysis data
+        analysis_data = {
+            'id': data.get('id', f'analysis_{int(time.time())}'),
+            'userId': user_id,
+            'uploadedAt': data.get('uploadedAt', datetime.now().isoformat()),
+            'image': data.get('image', ''),
+            'result': data.get('result', {}),
+            'damageRegions': data.get('damageRegions', [])
+        }
+        
+        logger.info(f"💾 save_analysis_result: Saving analysis data for user_id: {user_id}")
+        logger.info(f"📝 save_analysis_result: Analysis data keys: {list(analysis_data.keys())}")
+        
+        # Save to database
+        analysis_id = user_auth.save_analysis_result(user_id, analysis_data)
+        
+        logger.info(f"✅ save_analysis_result: Successfully saved with ID: {analysis_id}")
+        return jsonify({'id': analysis_id, 'message': 'Analysis saved successfully'}), 200
+        
+    except Exception as e:
+        logger.error(f"💥 save_analysis_result: Error occurred: {str(e)}")
+        logger.error(f"📚 save_analysis_result: Error traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 400
+
+@api.route('/admin/users/stats', methods=['GET'])
+@firebase_auth_required
+def get_all_users_stats():
+    """Get statistics for all users (admin only)"""
+    try:
+        # Check if user is admin (you can add admin check here)
+        # For now, allowing any authenticated user to see stats
+        logger.info(f"📊 Admin request: Getting all user stats from user {request.user.get('uid', 'unknown')}")
+        
+        user_auth = UserAuth(request.app.config['db_ref'])
+        all_users = user_auth.get_all_users_stats()
+        
+        # Calculate summary statistics
+        total_users = len(all_users)
+        active_users = len([u for u in all_users if u.get('is_active', False)])
+        total_analyses = sum(u.get('total_analyses', 0) for u in all_users)
+        
+        # Sort users by last activity
+        all_users.sort(key=lambda x: x.get('last_activity', ''), reverse=True)
+        
+        return jsonify({
+            'summary': {
+                'total_users': total_users,
+                'active_users': active_users,
+                'total_analyses': total_analyses,
+                'inactive_users': total_users - active_users
+            },
+            'users': all_users
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"💥 Admin stats error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/admin/users/<user_id>/stats', methods=['GET'])
+@firebase_auth_required
+def get_user_stats(user_id):
+    """Get statistics for a specific user (admin only)"""
+    try:
+        logger.info(f"📊 Admin request: Getting stats for user {user_id} from user {request.user.get('uid', 'unknown')}")
+        
+        user_auth = UserAuth(request.app.config['db_ref'])
+        user_stats = user_auth.get_user_stats(user_id)
+        
+        if not user_stats:
+            return jsonify({'error': 'User not found'}), 404
+            
+        return jsonify(user_stats), 200
+        
+    except Exception as e:
+        logger.error(f"💥 Admin user stats error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/user/stats', methods=['GET'])
+@firebase_auth_required
+def get_my_stats():
+    """Get current user's own statistics"""
+    try:
+        user_id = request.user['uid']
+        logger.info(f"📊 User request: Getting stats for user {user_id}")
+        
+        user_auth = UserAuth(request.app.config['db_ref'])
+        user_stats = user_auth.get_user_stats(user_id)
+        
+        if not user_stats:
+            return jsonify({'error': 'User profile not found'}), 404
+            
+        return jsonify(user_stats), 200
+        
+    except Exception as e:
+        logger.error(f"💥 User stats error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/admin/users/activity', methods=['GET'])
+@firebase_auth_required
+def get_user_activity():
+    """Get recent user activity summary (admin only)"""
+    try:
+        logger.info(f"📊 Admin request: Getting user activity from user {request.user.get('uid', 'unknown')}")
+        
+        user_auth = UserAuth(request.app.config['db_ref'])
+        all_users = user_auth.get_all_users_stats()
+        
+        # Filter users by activity in last 7 days
+        from datetime import datetime, timedelta
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        
+        recent_activity = []
+        for user in all_users:
+            if user.get('last_activity'):
+                try:
+                    last_activity = datetime.fromisoformat(user['last_activity'].replace('Z', '+00:00'))
+                    if last_activity > seven_days_ago:
+                        recent_activity.append({
+                            'uid': user['uid'],
+                            'email': user.get('email', 'Unknown'),
+                            'name': user.get('name', 'Unknown'),
+                            'last_activity': user['last_activity'],
+                            'total_analyses': user.get('total_analyses', 0),
+                            'is_active': user.get('is_active', False)
+                        })
+                except Exception as e:
+                    logger.warning(f"Could not parse date for user {user['uid']}: {str(e)}")
+        
+        # Sort by last activity
+        recent_activity.sort(key=lambda x: x['last_activity'], reverse=True)
+        
+        return jsonify({
+            'recent_activity': recent_activity,
+            'total_recent_users': len(recent_activity)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"💥 Admin activity error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/dev/create-profile', methods=['POST'])
+def dev_create_profile():
+    """Development endpoint to create missing user profiles"""
+    try:
+        # Only allow in development mode
+        dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
+        if not dev_mode:
+            return jsonify({'error': 'This endpoint is only available in development mode'}), 403
+        
+        from flask import current_app
+        
+        data = request.get_json()
+        if not data or 'uid' not in data:
+            return jsonify({'error': 'Missing uid in request'}), 400
+        
+        uid = data['uid']
+        profile_data = data.get('profile_data', {})
+        
+        logger.info(f"🔧 DEV: Creating profile for uid: {uid}")
+        
+        if 'db_ref' not in current_app.config:
+            logger.error("❌ DEV: No database reference in app config")
+            return jsonify({'error': 'Database reference not configured'}), 500
+        
+        # Check if profile already exists
+        profile = current_app.config['db_ref'].child('users').child(uid).child('profile').get()
+        
+        if profile:
+            logger.info(f"✅ DEV: Profile already exists for uid: {uid}")
+            return jsonify({'success': True, 'message': 'Profile already exists', 'data': profile}), 200
+        
+        # Create profile
+        logger.info(f"👤 DEV: Creating new profile for uid: {uid}")
+        
+        default_profile = {
+            'uid': uid,
+            'email': profile_data.get('email', ''),
+            'name': profile_data.get('display_name', profile_data.get('email', '').split('@')[0] if profile_data.get('email') else 'User'),
+            'created_at': datetime.now().isoformat(),
+            'first_login': datetime.now().isoformat(),
+            'last_activity': datetime.now().isoformat(),
+            'total_analyses': 0,
+            'total_vehicles': 0,
+            'total_insurance_records': 0,
+            'is_active': True,
+            'user_status': 'active',
+            'platform': 'web',
+            'features_used': [],
+            'provider': 'firebase',
+            'profile_created_via': 'dev_script'
+        }
+        
+        # Create the profile
+        current_app.config['db_ref'].child('users').child(uid).child('profile').set(default_profile)
+        
+        # Initialize other data structures
+        current_app.config['db_ref'].child('users').child(uid).child('analysis_history').set({})
+        current_app.config['db_ref'].child('users').child(uid).child('vehicles').set({})
+        current_app.config['db_ref'].child('users').child(uid).child('insurance').set({})
+        
+        logger.info(f"✅ DEV: Created profile for uid: {uid}")
+        
+        return jsonify({'success': True, 'message': 'Profile created successfully', 'data': default_profile}), 200
+        
+    except Exception as e:
+        logger.error(f"💥 DEV: Error creating profile: {str(e)}")
+        logger.error(f"📚 DEV: Error traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+@api.route('/api-status', methods=['GET'])
+def get_api_status():
+    """Get status of all Gemini API keys"""
+    try:
+        # Get status from multi-gemini system if available
+        if hasattr(car_damage_rag, 'get_api_status'):
+            status = car_damage_rag.get_api_status()
+        elif hasattr(car_damage_rag, 'using_key_manager') and car_damage_rag.using_key_manager:
+            from api_key_manager import api_key_manager
+            status = api_key_manager.get_status_report()
+        else:
+            # Fallback for single-key system
+            status = {
+                'total_keys': 1,
+                'current_key_index': 0,
+                'all_keys_exhausted': False,
+                'system_type': 'single_key',
+                'keys': [{
+                    'index': 0,
+                    'key_suffix': '...****',
+                    'is_current': True,
+                    'quota_exceeded': False,
+                    'available': True
+                }]
+            }
+        
+        return jsonify({
+            'success': True,
+            'data': status,
+            'timestamp': datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting API status: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
+
+@api.route('/reset-quotas', methods=['POST'])
+def reset_quotas():
+    """Reset all API key quotas (development only)"""
+    try:
+        dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
+        
+        if not dev_mode:
+            return jsonify({
+                'error': 'Quota reset only available in development mode',
+                'success': False
+            }), 403
+        
+        # Reset quotas in multi-gemini system
+        if hasattr(car_damage_rag, 'reset_quotas'):
+            car_damage_rag.reset_quotas()
+        elif hasattr(car_damage_rag, 'using_key_manager') and car_damage_rag.using_key_manager:
+            from api_key_manager import api_key_manager
+            api_key_manager.reset_all_quotas()
+        
+        logger.info("🔄 All API quotas reset via endpoint")
+        
+        return jsonify({
+            'success': True,
+            'message': 'All API quotas reset successfully'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error resetting quotas: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500

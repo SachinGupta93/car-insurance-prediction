@@ -7,6 +7,7 @@ import { DamageResult, DamageRegion } from '@/types'; // Ensure DamageRegion is 
 import { VehicleIdentificationCard } from './VehicleIdentificationCard';
 import { RepairCostCard } from './RepairCostCard';
 import { InsuranceRecommendationsCard } from './InsuranceRecommendationsCard';
+import { VehicleInsuranceAdviceCard } from './VehicleInsuranceAdviceCard';
 import AnalysisVisualization from '../AnalysisVisualization';
 
 // Import the AI-powered analysis function
@@ -33,6 +34,7 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
   const [analysisResult, setAnalysisResult] = useState<DamageResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const lastAnalyzedFileKey = useRef<string | null>(null);
   
   // Effect to manage blob URL lifecycle
@@ -50,10 +52,7 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
     }
   }, [imageFile]);
   const isAnalysisInProgress = useRef<boolean>(false);
-  const hasAnalysisBeenTriggered = useRef<boolean>(false);
   const currentAnalysisFileKey = useRef<string | null>(null);
-  const analysisInitiatedForFile = useRef<string | null>(null);
-  const processedCombinations = useRef<Set<string>>(new Set());
 
   // Create a unique key for the file to avoid duplicate processing
   const getFileKey = useCallback((file: File) => {
@@ -63,14 +62,9 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
   const performAnalysis = useCallback(async (file: File, signal?: AbortSignal) => {
     const fileKey = getFileKey(file);
     
-    // Multiple prevention checks
+    // Simplified duplicate prevention - only check if analysis is in progress
     if (isAnalysisInProgress.current) {
       console.log('🚫 Preventing duplicate analysis: Analysis already in progress');
-      return;
-    }
-
-    if (currentAnalysisFileKey.current === fileKey) {
-      console.log('🚫 Preventing duplicate analysis: This file analysis is already in progress');
       return;
     }
 
@@ -79,16 +73,9 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
       return;
     }
 
-    if (analysisInitiatedForFile.current === fileKey) {
-      console.log('🚫 Preventing duplicate analysis: Analysis already initiated for this file');
-      return;
-    }
-
-    // Set all prevention flags
+    // Set prevention flags
     isAnalysisInProgress.current = true;
-    hasAnalysisBeenTriggered.current = true;
     currentAnalysisFileKey.current = fileKey;
-    analysisInitiatedForFile.current = fileKey;
     
     console.log('[DamageAnalyzer.tsx] Starting analysis for file:', file.name);
 
@@ -121,15 +108,32 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
 
       console.log('[DamageAnalyzer.tsx] Analysis complete with processed regions:', processedResult);
       setAnalysisResult(processedResult);
+      setIsDemoMode(processedResult.isDemoMode || false);
+      
+      // Show notification if in demo mode
+      if (processedResult.isDemoMode) {
+        // Import notification context if available
+        const showNotification = (window as any).showNotification;
+        if (showNotification) {
+          showNotification({
+            type: 'warning',
+            title: 'Demo Mode Active',
+            message: 'API quota exceeded. Showing sample analysis. Try again in a few minutes.',
+            duration: 5000
+          });
+        }
+        console.log('🔄 [DamageAnalyzer.tsx] Demo mode activated due to quota exceeded');
+      }
+      
       onAnalysisComplete(processedResult);
       lastAnalyzedFileKey.current = fileKey;
       
       // Log successful completion with more details
       console.log('[DamageAnalyzer.tsx] ✅ Analysis successfully completed!');
       console.log('[DamageAnalyzer.tsx] - Damage Type:', processedResult.damageType);
-      console.log('[DamageAnalyzer.tsx] - Confidence:', (processedResult.confidence * 100).toFixed(1) + '%');
+      console.log('[DamageAnalyzer.tsx] - Confidence:', `${(processedResult.confidence * 100).toFixed(1)}%`);
       console.log('[DamageAnalyzer.tsx] - Description length:', processedResult.description.length);
-      console.log('[DamageAnalyzer.tsx] - Regions found:', processedResult.identifiedDamageRegions.length);
+      console.log('[DamageAnalyzer.tsx] - Regions found:', processedResult.identifiedDamageRegions?.length || 0);
 
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -138,79 +142,81 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
         onAnalysisError('Analysis was cancelled.');
       } else {
         console.error('[DamageAnalyzer.tsx] Error during analysis:', err);
-        setError('Failed to analyze image. Please try again.');
-        onAnalysisError('Failed to analyze image. Please try again.');
+        
+        // Enhanced error handling for specific error types
+        let errorMessage = 'Failed to analyze image. Please try again.';
+        
+        if (err.message && err.message.includes('429')) {
+          errorMessage = 'API quota exceeded. Please wait a few minutes before trying again, or upgrade your API plan.';
+        } else if (err.message && err.message.includes('quota')) {
+          errorMessage = 'API usage limit reached. Please try again later or check your API plan.';
+        } else if (err.message && err.message.includes('Cannot connect')) {
+          errorMessage = 'Cannot connect to the analysis server. Please check if the backend is running.';
+        } else if (err.message && err.message.includes('ResourceExhausted')) {
+          errorMessage = 'Gemini API quota exhausted. Please wait for quota reset or upgrade your plan.';
+        } else if (err.message) {
+          errorMessage = err.message;
+        }
+        
+        setError(errorMessage);
+        onAnalysisError(errorMessage);
       }
     } finally {
+      // Reset analysis flags to allow retries
       isAnalysisInProgress.current = false;
       currentAnalysisFileKey.current = null;
-      // Keep analysisInitiatedForFile.current to prevent re-initiation
     }
   }, [onAnalysisStart, onAnalysisComplete, onAnalysisError, getFileKey]);
 
+  // Effect to handle file changes and reset state
   useEffect(() => {
-    console.log('[DamageAnalyzer.tsx] Props received - isAnalyzing:', isAnalyzing, 'imageFile:', imageFile?.name);
-
-    // Only proceed if we have an image file and analysis is requested
-    if (!imageFile || !isAnalyzing) {
-      return;
-    }
-
+    if (!imageFile) return;
+    
     const fileKey = getFileKey(imageFile);
     
-    // Create a unique combination key for this file + analyzing state
-    const combinationKey = `${fileKey}-analyzing-${isAnalyzing}`;
+    // If this is a new file, reset all state
+    if (lastAnalyzedFileKey.current !== fileKey) {
+      console.log('[DamageAnalyzer.tsx] 🔄 New file detected, resetting state for:', imageFile.name);
+      isAnalysisInProgress.current = false;
+      currentAnalysisFileKey.current = null;
+      setAnalysisResult(null);
+      setError(null);
+      setIsDemoMode(false);
+    }
+  }, [imageFile, getFileKey]);
+
+  useEffect(() => {
+    const fileKey = imageFile ? getFileKey(imageFile) : 'no-file';
     
-    // Check if this exact combination has already been processed
-    if (processedCombinations.current.has(combinationKey)) {
-      console.log('🚫 Preventing duplicate analysis: This file+state combination already processed');
+    // Only proceed if we have an image file, analysis is requested, and no analysis is in progress
+    if (!imageFile || !isAnalyzing || isAnalysisInProgress.current) {
       return;
     }
     
-    // Reset analysis trigger flag when a new file is provided
-    if (lastAnalyzedFileKey.current !== fileKey) {
-      hasAnalysisBeenTriggered.current = false;
-      analysisInitiatedForFile.current = null;
-      // Clear processed combinations for new file
-      processedCombinations.current.clear();
-      console.log('[DamageAnalyzer.tsx] New file detected, resetting trigger flag for:', imageFile.name);
+    // Check if this file has already been analyzed successfully
+    if (lastAnalyzedFileKey.current === fileKey) {
+      console.log('🚫 Skipping: File already analyzed successfully');
+      return;
     }
 
-    // Only start analysis if not already triggered and not in progress
-    if (!hasAnalysisBeenTriggered.current && 
-        !isAnalysisInProgress.current && 
-        currentAnalysisFileKey.current !== fileKey &&
-        lastAnalyzedFileKey.current !== fileKey &&
-        analysisInitiatedForFile.current !== fileKey) {
-      
-      // Mark this combination as processed BEFORE starting analysis
-      processedCombinations.current.add(combinationKey);
-      
-      console.log('[DamageAnalyzer.tsx] Conditions met, starting analysis for:', imageFile.name);
-      // Call performAnalysis directly without dependency issues
-      performAnalysis(imageFile, abortSignal);
-    } else {
-      // Log why we're not starting analysis
-      if (hasAnalysisBeenTriggered.current) {
-        console.log('🚫 Preventing duplicate analysis: Analysis already triggered for this session');
-      } else if (isAnalysisInProgress.current) {
-        console.log('🚫 Preventing duplicate analysis: Analysis already in progress');
-      } else if (currentAnalysisFileKey.current === fileKey) {
-        console.log('🚫 Preventing duplicate analysis: This file analysis is already in progress');
-      } else if (lastAnalyzedFileKey.current === fileKey) {
-        console.log('🚫 Preventing duplicate analysis: This file has already been analyzed');
-      } else if (analysisInitiatedForFile.current === fileKey) {
-        console.log('🚫 Preventing duplicate analysis: Analysis already initiated for this file');
+    // Additional check: if we're already analyzing this specific file
+    if (currentAnalysisFileKey.current === fileKey) {
+      console.log('🚫 Skipping: This specific file is already being analyzed');
+      return;
+    }
+
+    // Start analysis with a slight delay to prevent duplicate calls from React strict mode
+    const timeoutId = setTimeout(() => {
+      // Double-check that we're still in the same state
+      if (!isAnalysisInProgress.current && lastAnalyzedFileKey.current !== fileKey) {
+        console.log('[DamageAnalyzer.tsx] ✅ Starting analysis for:', imageFile.name);
+        performAnalysis(imageFile, abortSignal);
       }
-    }
+    }, 100);
 
-    // Cleanup function to reset analysis state when component unmounts
-    return () => {
-      isAnalysisInProgress.current = false;
-      currentAnalysisFileKey.current = null;
-      // Don't reset analysisInitiatedForFile here to maintain prevention across re-renders
-    };
-  }, [imageFile, isAnalyzing, abortSignal]); // Removed getFileKey and performAnalysis from dependencies
+    // Cleanup timeout if effect is cleaned up
+    return () => clearTimeout(timeoutId);
+  }, [imageFile, isAnalyzing, abortSignal, getFileKey]);
 
   // Remove performAnalysis from dependencies to prevent re-creation loops
 
@@ -256,10 +262,25 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
 
   // Ensure identifiedRegions is always an array, even if undefined in analysisResult
   const identifiedRegions: DamageRegion[] = analysisResult?.identifiedDamageRegions || [];
-  console.log('[DamageAnalyzer.tsx] Regions being passed to AnalysisVisualization:', identifiedRegions);
   
   return (
     <div className="p-4 space-y-6">
+      {/* Demo Mode Banner */}
+      {isDemoMode && (
+        <Alert className="border-orange-200 bg-orange-50">
+          <AlertTriangle className="h-4 w-4 text-orange-600" />
+          <AlertTitle className="text-orange-800">Demo Mode Active - API Quota Exceeded</AlertTitle>
+          <AlertDescription className="text-orange-700">
+            The Gemini AI API has exceeded its quota limit. This analysis is a demonstration only and not based on your actual image. 
+            {analysisResult?.retryDelaySeconds && (
+              <> Please wait {analysisResult.retryDelaySeconds} seconds before trying again.</>
+            )}
+            <br />
+            <strong>Note:</strong> For accurate damage analysis, please try again later when the API quota resets, or consider upgrading the API plan.
+          </AlertDescription>
+        </Alert>
+      )}
+      
       {imageFile && blobUrl && (
         <Card>
           <CardHeader>
@@ -319,7 +340,9 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                 </div>
                 <div className="bg-white rounded-lg p-4 shadow-sm">
                   <h4 className="font-semibold text-gray-700 mb-1">Confidence Level</h4>
-                  <p className="text-lg font-bold text-green-600">{(analysisResult.confidence * 100).toFixed(1)}%</p>
+                  <p className="text-lg font-bold text-green-600">
+                    {`${(analysisResult.confidence * 100).toFixed(1)}%`}
+                  </p>
                 </div>
                 <div className="bg-white rounded-lg p-4 shadow-sm">
                   <h4 className="font-semibold text-gray-700 mb-1">Severity</h4>
@@ -604,6 +627,14 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
         <RepairCostCard 
           repairCost={analysisResult.enhancedRepairCost} 
           damageType={analysisResult.damageType}
+        />
+      )}
+
+      {/* Vehicle-Specific Insurance Advice */}
+      {analysisResult.insurance_advice && (
+        <VehicleInsuranceAdviceCard 
+          insuranceAdvice={analysisResult.insurance_advice}
+          vehicleInfo={analysisResult.vehicleIdentification}
         />
       )}
 

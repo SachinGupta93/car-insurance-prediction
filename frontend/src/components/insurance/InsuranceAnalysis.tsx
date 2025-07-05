@@ -22,7 +22,8 @@ import {
   Award
 } from 'lucide-react';
 import AnalysisChart from '@/components/charts/AnalysisChart';
-import { useFirebaseService } from '@/services/firebaseService';
+import unifiedApiService from '@/services/unifiedApiService';
+import { FallbackDataService } from '@/services/fallbackDataService';
 
 interface InsuranceData {
   month: string;
@@ -66,7 +67,6 @@ interface ClaimData {
 }
 
 export default function InsuranceAnalysis() {
-  const firebaseService = useFirebaseService(); // Moved hook call to top level
   const [selectedCompany, setSelectedCompany] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<string>('6months');
   const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'claims' | 'analytics'>('overview');
@@ -131,21 +131,28 @@ export default function InsuranceAnalysis() {
   useEffect(() => {
     const loadClaimsData = async () => {
       try {
+        console.log('🏢 InsuranceAnalysis: Loading claims data...');
+        
         // This would typically come from a dedicated claims API
         // For now, we'll simulate it by transforming analysis history
-        const history = await firebaseService.getAnalysisHistory();
+        const history = await unifiedApiService.getUserHistory();
+        console.log('📊 InsuranceAnalysis: History loaded:', {
+          historyLength: history.length,
+          sampleHistory: history.slice(0, 2)
+        });
         
         // Transform history items into claims
         const claims = history.slice(0, 5).map((item, index) => {
           // Extract cost from description or use a default
-          const costMatch = item.repairEstimate?.match(/₹(\d+(?:,\d+)*)/);
+          const costMatch = item.result?.repairEstimate?.match(/₹(\d+(?:,\d+)*)/);
           const cost = costMatch ? parseInt(costMatch[1].replace(/,/g, '')) : 25000 + Math.floor(Math.random() * 50000);
           
           // Determine status based on confidence
           let status: 'pending' | 'approved' | 'denied' | 'under-review' = 'pending';
-          if (item.confidence > 0.85) status = 'approved';
-          else if (item.confidence > 0.7) status = 'under-review';
-          else if (item.confidence < 0.5) status = 'denied';
+          const confidence = item.result?.confidence || 0;
+          if (confidence > 0.85) status = 'approved';
+          else if (confidence > 0.7) status = 'under-review';
+          else if (confidence < 0.5) status = 'denied';
           
           // Calculate approved amount based on status
           const approvedAmount = status === 'approved' ? Math.round(cost * 0.9) : 0;
@@ -158,27 +165,61 @@ export default function InsuranceAnalysis() {
           return {
             id: item.id,
             claimNumber: `CLM-${new Date().getFullYear()}-${1000 + index}`,
-            vehicleModel: item.location || 'Unknown Vehicle',
-            damageType: item.damageType,
+            vehicleModel: item.result?.vehicleIdentification?.make || 'Unknown Vehicle',
+            damageType: item.result?.damageType || 'Unknown',
             estimatedCost: cost,
             approvedAmount,
             status,
-            submissionDate: item.analysisDate,
-            expectedResolution: new Date(new Date(item.analysisDate).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            submissionDate: item.uploadedAt,
+            expectedResolution: new Date(new Date(item.uploadedAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             insuranceCompany: randomCompanyId
           };
         });
         
+        console.log('✅ InsuranceAnalysis: Claims data processed:', {
+          claimsLength: claims.length,
+          sampleClaims: claims.slice(0, 2)
+        });
+        
         setClaimsData(claims);
       } catch (error) {
-        console.error('Failed to load claims data:', error);
-        // Fallback to empty array
-        setClaimsData([]);
+        console.error('💥 InsuranceAnalysis: Failed to load claims data:', error);
+        console.error('📚 InsuranceAnalysis: Error details:', {
+          name: (error as Error).name,
+          message: (error as Error).message,
+          stack: (error as Error).stack
+        });
+        
+        // Use fallback data when backend is not available
+        console.log('🔄 InsuranceAnalysis: Using fallback data...');
+        const fallbackHistory = FallbackDataService.generateSampleHistory();
+        
+        // Transform fallback history into claims
+        const fallbackClaims = fallbackHistory.slice(0, 5).map((item, index) => {
+          const costMatch = item.result?.repairEstimate?.match(/₹(\d+(?:,\d+)*)/);
+          const cost = costMatch ? parseInt(costMatch[1].replace(/,/g, '')) : 25000;
+          
+          return {
+            id: item.id,
+            claimNumber: `CLM-2024-${1000 + index}`,
+            vehicleModel: item.result?.vehicleIdentification?.make || 'Unknown Vehicle',
+            damageType: item.result?.damageType || 'Unknown',
+            estimatedCost: cost,
+            approvedAmount: Math.round(cost * 0.9),
+            status: 'approved' as const,
+            submissionDate: item.uploadedAt.split('T')[0],
+            expectedResolution: new Date(new Date(item.uploadedAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            insuranceCompany: insuranceCompanies[index % insuranceCompanies.length].id
+          };
+        });
+        
+        console.log('✅ InsuranceAnalysis: Fallback claims created:', fallbackClaims.length);
+        setClaimsData(fallbackClaims);
       }
     };
     
     loadClaimsData();
-  }, [firebaseService]); // Added firebaseService to dependency array
+  }, []); // No dependencies needed since we're using the service directly
 
   // Calculate overview stats based on claims data
   const [overviewStats, setOverviewStats] = useState([

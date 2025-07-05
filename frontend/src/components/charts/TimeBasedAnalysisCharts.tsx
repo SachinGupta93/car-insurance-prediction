@@ -1,71 +1,50 @@
 import React, { useContext } from 'react';
-import HistoryContext, { AnalysisHistoryItem } from '@/context/HistoryContext'; // Corrected import
+// import HistoryContext, { AnalysisHistoryItem } from '@/context/HistoryContext'; // No longer needed
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AnalysisChart from './AnalysisChart'; 
 // DamageResult might be needed if we dive deep into item.result, but AnalysisHistoryItem should suffice for top-level properties
 // import { DamageResult } from '@/types'; 
 
-const TimeBasedAnalysisCharts: React.FC = () => {
-  const historyContext = useContext(HistoryContext);
+interface TimeBasedAnalysisChartsProps {
+  data: Array<{ date: string; count: number }>;
+}
 
-  if (!historyContext) {
-    return <p>Error: History context is not available.</p>;
-  }
-
-  const { history } = historyContext; // history is of type AnalysisHistoryItem[]
-
-  if (!history || history.length === 0) {
+const TimeBasedAnalysisCharts: React.FC<TimeBasedAnalysisChartsProps> = ({ data }) => {
+  
+  if (!data || data.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Time-Based Analysis</CardTitle>
+      <Card className="bg-white shadow-sm border border-gray-200">
+        <CardHeader className="border-b border-gray-100">
+          <CardTitle className="text-lg font-medium text-gray-800">Time-Based Analysis</CardTitle>
         </CardHeader>
-        <CardContent>
-          <p>No historical data available to display trends.</p>
+        <CardContent className="pt-4">
+          <p className="text-gray-500 text-center py-8">No historical data available to display trends.</p>
         </CardContent>
       </Card>
     );
   }
 
-  // Prepare data for Damage Trends Chart
-  const damageTrendData = history.map((item: AnalysisHistoryItem) => ({
-    date: new Date(item.analysisDate).toLocaleDateString(),
-    count: 1, // Placeholder: This needs to be aggregated based on damage types or severity
-    type: item.damageType || 'Unknown',
+  // Prepare data for Damage Trends Chart (now passed as prop)
+  const damageTrendData = data.map(item => ({
+    date: item.date,
+    count: item.count,
+    type: 'Damage Count', // Simplified for this chart component
   }));
   
-  // Prepare data for Cost Trends Chart
-  const costTrendData = history.map((item: AnalysisHistoryItem) => {
-    const costString = item.repairEstimate || '0';
-    return {
-      date: new Date(item.analysisDate).toLocaleDateString(),
-      cost: parseFloat(costString.replace(/[^\d.-]/g, '')) || 0, 
-      type: 'Repair Cost',
-    };
-  });
-
+ // Cost trend data would need to be prepared similarly if this chart were to show it
+  // For now, this component focuses on damage counts over time based on the `data` prop.
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Damage Trends Over Time</CardTitle>
+      <Card className="bg-white shadow-sm border border-gray-200">
+        <CardHeader className="border-b border-gray-100">
+          <CardTitle className="text-lg font-medium text-gray-800">Damage Trends Over Time</CardTitle>
         </CardHeader>
-        <CardContent>
-          <AnalysisChart type="time-series" damageData={damageTrendData} />
-          <p className="text-sm text-muted-foreground mt-2">
-            Note: This chart shows a simplified view. Actual implementation may require data aggregation.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Repair Cost Trends Over Time</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AnalysisChart type="time-series" costData={costTrendData} />
-           <p className="text-sm text-muted-foreground mt-2">
-            Note: This chart shows a simplified view. Actual implementation may require data aggregation.
+        <CardContent className="pt-4">
+          <div className="h-[300px]">
+            <AnalysisChart type="time-series" data={damageTrendData} />
+          </div>
+          <p className="text-xs text-gray-500 mt-3 text-center">
+            Analysis based on {data.length} historical records
           </p>
         </CardContent>
       </Card>

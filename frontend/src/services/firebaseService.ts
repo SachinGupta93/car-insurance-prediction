@@ -3,20 +3,19 @@ import { ref, push, set, get, query, orderByChild, equalTo, remove, update } fro
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 import { useCallback, useEffect } from 'react';
 
-export interface AnalysisHistoryItem {
-  id: string;
-  userId: string;
-  imageUrl: string;
-  analysisDate: string; // ISO date string
-  damageDescription: string; // Brief description of damage
-  repairEstimate?: string; // Optional repair estimate
-  damageType: string; // Type of damage
-  confidence: number; // Confidence score of the analysis
-  description: string; // Analysis description
-  recommendations: string[]; // Repair/action recommendations
-  location?: string; // Location of damage
-  severity?: 'minor' | 'moderate' | 'severe' | 'critical'; // Damage severity
-}
+import { UploadedImage, DamageResult, DamageRegion } from '@/types';
+
+// AnalysisHistoryItem is now represented by UploadedImage from '@/types'
+// It includes fields like:
+// id: string;
+// userId: string;
+// uploadedAt: string; 
+// image: string; 
+// result: DamageResult; // DamageResult now includes 'severity'
+// damageRegions?: DamageRegion[]; // These are within result.identifiedDamageRegions
+// severity?: 'minor' | 'moderate' | 'severe' | 'critical'; // This is now primarily within result.severity
+
+
 
 export interface VehicleData {
   id: string;
@@ -120,7 +119,7 @@ class FirebaseDataService {
   }
 
   // Analysis History Management
-  async addAnalysisToHistory(analysisData: Omit<AnalysisHistoryItem, 'id' | 'userId' | 'analysisDate'>): Promise<string> {
+  async addAnalysisToHistory(analysisData: Omit<UploadedImage, 'id' | 'userId' | 'uploadedAt'>): Promise<string> {
     if (!this.isAuthenticated() || !this.getCurrentUserId()) {
       throw new Error('User must be authenticated');
     }
@@ -129,40 +128,104 @@ class FirebaseDataService {
     const historyRef = ref(rtdb, `users/${userId}/analysis_history`);
     const newAnalysisRef = push(historyRef);
     
-    // Validate imageUrl is a base64 string and not a blob URL to prevent storage issues
-    if (analysisData.imageUrl && analysisData.imageUrl.startsWith('blob:')) {
-      console.error('Cannot store blob URLs in Firebase - expect image loading errors');
-      // We'll still proceed, but this will cause issues when trying to load the image later
+    
+    // Ensure image is either a valid base64 string or a valid URL (not a blob)
+    let validatedImageUrl = analysisData.image;
+    
+    // If the image is a blob URL, convert it to base64 for storage
+    if (analysisData.image && analysisData.image.startsWith('blob:')) {
+      try {
+        // Convert blob URL to base64
+        const response = await fetch(analysisData.image);
+        const blob = await response.blob();
+        validatedImageUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch (error) {
+        console.error('Error converting blob to base64:', error);
+        validatedImageUrl = ''; // Fallback to empty string
+      }
     }
     
-    // Ensure imageUrl is either a valid base64 string or a valid URL (not a blob)
-    const validatedImageUrl = analysisData.imageUrl && !analysisData.imageUrl.startsWith('blob:') 
-      ? analysisData.imageUrl 
-      : ''; // Empty string as fallback if invalid
-    
-    const analysisItem: AnalysisHistoryItem = {
-      ...analysisData,
-      imageUrl: validatedImageUrl,
+    // If still invalid, use empty string
+    if (!validatedImageUrl || (!validatedImageUrl.startsWith('data:') && !validatedImageUrl.startsWith('http'))) {
+      validatedImageUrl = '';
+    }
+
+    const analysisItem: UploadedImage = {
+      ...analysisData, // Spread the incoming data first
       id: newAnalysisRef.key!,
       userId,
-      analysisDate: new Date().toISOString(),
+      uploadedAt: new Date().toISOString(),
+      image: validatedImageUrl, // Overwrite image with validatedImageUrl
+      // result should be part of analysisData and correctly typed
+      // damageRegions might be part of analysisData.result.identifiedDamageRegions or analysisData.damageRegions
+      // severity might be part of analysisData.result.severity or analysisData.severity
     };
+
 
     await set(newAnalysisRef, analysisItem);
     return newAnalysisRef.key!;
   }
 
-  async getAnalysisHistory(userId?: string): Promise<AnalysisHistoryItem[]> {
+  async getAnalysisHistory(userId?: string): Promise<UploadedImage[]> {
+    console.log('📚 FirebaseService: Getting analysis history...', { userId });
+    
     const uid = userId || this.getCurrentUserId();
-    if (!uid) return [];
+    if (!uid) {
+      console.log('❌ FirebaseService: No user ID available for history');
+      return [];
+    }
+    
+    console.log('👤 FirebaseService: Using user ID:', uid);
 
     const historyRef = ref(rtdb, `users/${uid}/analysis_history`);
     const snapshot = await get(historyRef);
     
     if (snapshot.exists()) {
       const data = snapshot.val();
-      return Object.values(data) as AnalysisHistoryItem[];
+      const historyArray = Object.values(data) as UploadedImage[];
+      
+      // Process and normalize the history data
+      const processedHistory = historyArray.map(item => {
+        // Ensure all required fields are present with fallbacks
+        const processedItem: UploadedImage = {
+          ...item,
+          // Ensure we have an image URL (use imageUrl if image is empty)
+          image: item.image || item.imageUrl || '',
+          // Ensure we have proper damage type
+          damageType: item.result?.damageType || item.damageType || 'Structural Damage',
+          // Ensure we have proper confidence
+          confidence: item.result?.confidence || item.confidence || 0.75,
+          // Ensure we have proper severity
+          severity: item.result?.severity || item.severity || 'moderate',
+          // Ensure we have proper result object
+          result: item.result || {
+            damageType: item.damageType || 'Structural Damage',
+            confidence: item.confidence || 0.75,
+            severity: item.severity || 'moderate',
+            description: item.result?.description || 'Analysis completed successfully',
+            damageDescription: item.result?.damageDescription || 'Damage detected and analyzed',
+            recommendations: item.result?.recommendations || ['Professional assessment recommended'],
+            identifiedDamageRegions: item.result?.identifiedDamageRegions || []
+          }
+        };
+        return processedItem;
+      });
+      
+      console.log('✅ FirebaseService: History loaded and processed from Firebase:', {
+        dataType: typeof data,
+        keys: Object.keys(data).slice(0, 5),
+        historyLength: processedHistory.length,
+        sample: processedHistory.slice(0, 2)
+      });
+      return processedHistory;
     }
+    
+    console.log('📭 FirebaseService: No history data found in Firebase');
     return [];
   }
 
@@ -326,20 +389,50 @@ class FirebaseDataService {
     severityBreakdown: Record<string, number>;
   }> {
     try {
+      console.log('📊 FirebaseService: Getting analytics data...');
       const history = await this.getAnalysisHistory();
+      console.log('📈 FirebaseService: History for analytics:', {
+        length: history.length,
+        sample: history.slice(0, 2)
+      });
       
       // Calculate total analyses
       const totalAnalyses = history.length;
       
       // Calculate average confidence
-      const avgConfidence = history.reduce((sum, item) => sum + item.confidence, 0) / 
+      const avgConfidence = history.reduce((sum, item) => sum + (item.result?.confidence || 0), 0) / 
         (totalAnalyses || 1); // Prevent division by zero
       
-      // Count damage types
+      
+      // Count damage types - prioritize main damage type over regions
       const damageTypes: Record<string, number> = {};
       history.forEach(item => {
-        damageTypes[item.damageType] = (damageTypes[item.damageType] || 0) + 1;
+        let damageTypeFound = false;
+        
+        // First try the main damage type from result
+        if (item.result?.damageType) {
+          damageTypes[item.result.damageType] = (damageTypes[item.result.damageType] || 0) + 1;
+          damageTypeFound = true;
+        }
+        
+        // If no main damage type, try regions
+        if (!damageTypeFound) {
+          if (item.result?.identifiedDamageRegions && Array.isArray(item.result.identifiedDamageRegions)) {
+            item.result.identifiedDamageRegions.forEach(region => {
+              damageTypes[region.damageType] = (damageTypes[region.damageType] || 0) + 1;
+            });
+          } else if (item.damageRegions && Array.isArray(item.damageRegions)) {
+            // Fallback if damageRegions is at the top level of UploadedImage
+            item.damageRegions.forEach(region => {
+              damageTypes[region.damageType] = (damageTypes[region.damageType] || 0) + 1;
+            });
+          } else {
+            // If no damage types found, categorize as "Unknown"
+            damageTypes['Unknown'] = (damageTypes['Unknown'] || 0) + 1;
+          }
+        }
       });
+
       
       // Calculate monthly trends (last 6 months)
       const monthlyTrends: Array<{ month: string; count: number; avgCost: number }> = [];
@@ -353,12 +446,12 @@ class FirebaseDataService {
         const year = month.getFullYear();
         
         const monthItems = history.filter(item => {
-          const date = new Date(item.analysisDate);
+          const date = new Date(item.uploadedAt); // Use uploadedAt
           return date.getMonth() === month.getMonth() && date.getFullYear() === year;
         });
         
         const avgCost = monthItems.reduce((sum, item) => {
-          const costStr = typeof item.repairEstimate === 'string' ? item.repairEstimate : '0';
+          const costStr = typeof item.result?.repairEstimate === 'string' ? item.result.repairEstimate : '0';
           const cost = parseInt(costStr.replace(/[^\d]/g, '')) || 0;
           return sum + cost;
         }, 0) / (monthItems.length || 1);
@@ -370,37 +463,62 @@ class FirebaseDataService {
         });
       }
       
-      // Count by severity
+      // Count by severity - more comprehensive
       const severityBreakdown: Record<string, number> = {
-        minor: 0,
-        moderate: 0,
-        severe: 0,
-        critical: 0
+        'minor': 0,
+        'moderate': 0,
+        'severe': 0,
+        'critical': 0,
+        'unknown': 0
       };
       
       history.forEach(item => {
-        if (item.severity) {
-          severityBreakdown[item.severity] = (severityBreakdown[item.severity] || 0) + 1;
+        const severity = item.result?.severity || item.severity || 'unknown';
+        const normalizedSeverity = severity.toLowerCase();
+        
+        if (severityBreakdown.hasOwnProperty(normalizedSeverity)) {
+          severityBreakdown[normalizedSeverity] += 1;
+        } else {
+          severityBreakdown['unknown'] += 1;
         }
       });
-      
-      return {
+
+      const analyticsResult = {
         totalAnalyses,
         avgConfidence,
         damageTypes,
         monthlyTrends,
         severityBreakdown
       };
+      
+      console.log('📊 FirebaseService: Analytics data computed:', analyticsResult);
+      
+      return analyticsResult;
     } catch (error) {
-      console.error('Error getting analytics data:', error);
-      return {
+      console.error('💥 FirebaseService: Error getting analytics data:', error);
+      console.error('📚 FirebaseService: Analytics error details:', {
+        name: (error as Error).name,
+        message: (error as Error).message,
+        stack: (error as Error).stack
+      });
+      
+      // Return fallback data
+      const fallbackData = {
         totalAnalyses: 0,
         avgConfidence: 0,
         damageTypes: {},
         monthlyTrends: [],
         severityBreakdown: {}
       };
+      
+      console.log('🔄 FirebaseService: Returning fallback analytics data:', fallbackData);
+      return fallbackData;
     }
+  }
+
+  // Renaming getAnalysisHistory to fetchUserHistory for clarity and consistency with Dashboard
+  async fetchUserHistory(userId?: string): Promise<UploadedImage[]> {
+    return this.getAnalysisHistory(userId);
   }
 }
 

@@ -2,6 +2,50 @@
 
 A comprehensive web application that leverages Google's Gemini AI to analyze car damage from uploaded images, providing detailed assessments, repair recommendations, and insurance guidance with modern interactive dashboards.
 
+## 🚀 Quick Start for Development
+
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.8+
+- Firebase project (optional for dev mode)
+
+### Quick Setup
+```bash
+# 1. Clone and install
+git clone <repository-url>
+cd Car-damage-prediction
+
+# 2. Frontend setup
+cd frontend
+npm install
+cp .env.template .env  # Configure environment variables
+
+# 3. Backend setup
+cd ../backend
+pip install -r requirements.txt
+
+# 4. Enable development mode (in frontend/.env)
+VITE_DEV_MODE=true
+VITE_BYPASS_AUTH_IN_DEV=true
+VITE_BYPASS_QUOTA_IN_DEV=true
+VITE_INSTANT_DEV_RESPONSES=true
+
+# 5. Start both servers
+# Terminal 1: Backend
+cd backend && python main.py
+
+# Terminal 2: Frontend
+cd frontend && npm run dev
+```
+
+### Development Mode Features
+- ⚡ **Instant responses** (no API calls needed)
+- 🔓 **Authentication bypass** (no login required)
+- 📊 **Realistic test data** (perfect for UI testing)
+- 🚫 **No quota limits** (unlimited testing)
+
+👉 **See [DEVELOPMENT_MODE_GUIDE.md](./DEVELOPMENT_MODE_GUIDE.md) for detailed configuration**
+
 ## ✨ Features
 
 ### 🔍 **AI-Powered Analysis**

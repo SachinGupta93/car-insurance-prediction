@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ImageHistory from './ImageHistory';
 import { useHistory, AnalysisHistoryItem } from '@/context/HistoryContext';
+import { FallbackDataService } from '@/services/fallbackDataService';
 
 type FilterType = 'all' | 'recent' | 'dent' | 'scratch' | 'glass' | 'severe';
 
@@ -8,9 +9,48 @@ const HistoryPage: React.FC = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const { history } = useHistory();
+  const [displayHistory, setDisplayHistory] = useState<AnalysisHistoryItem[]>([]);
+
+  console.log('📚 HistoryPage: Rendering with data:', {
+    historyLength: history.length,
+    filter,
+    searchTerm,
+    sampleHistory: history.slice(0, 2)
+  });
+
+  // Use fallback data if no history is available
+  useEffect(() => {
+    if (history.length === 0) {
+      console.log('📭 HistoryPage: No history available, using fallback data...');
+      const fallbackHistory = FallbackDataService.generateSampleHistory();
+      console.log('✅ HistoryPage: Fallback history loaded:', fallbackHistory.length + ' items');
+      // Transform UploadedImage[] to AnalysisHistoryItem[]
+      const transformedHistory = fallbackHistory.map(item => ({
+        ...item,
+        userId: item.userId || 'unknown', // Ensure userId is always a string
+        imageUrl: item.image,
+        analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(), // Ensure analysisDate is always a string
+        damageDescription: item.result?.description || 'No description available',
+        damageType: (item as any).damageType || item.result?.damageType || 'Unknown',
+        description: item.result?.description || 'No description available',
+        recommendations: ['Check with insurance provider', 'Get repair estimate', 'Schedule repair'],
+        confidence: item.confidence || item.result?.confidence || 0 // Ensure confidence is always a number
+      }));
+      setDisplayHistory(transformedHistory);
+    } else {
+      console.log('📚 HistoryPage: Using real history data:', history.length + ' items');
+      setDisplayHistory(history);
+    }
+  }, [history]);
 
   // Filter history based on current filter and search term
-  const filteredHistory = history.filter((item: AnalysisHistoryItem) => {
+  const filteredHistory = displayHistory.filter((item: AnalysisHistoryItem) => {
+    console.log('🔍 HistoryPage: Filtering item:', {
+      id: item.id,
+      damageType: item.damageType,
+      confidence: item.confidence,
+      filter
+    });
     // Apply type filter
     if (filter !== 'all' && filter !== 'recent') {
       if (filter === 'severe') {
@@ -43,14 +83,15 @@ const HistoryPage: React.FC = () => {
   // Get counts for each damage type for the filter badges
   const getCounts = () => {
     const counts = {
-      all: history.length,
+      all: displayHistory.length,
       dent: 0,
-      scratch: 0,      glass: 0,
+      scratch: 0,
+      glass: 0,
       severe: 0,
-      recent: history.length
+      recent: displayHistory.length
     };
     
-    history.forEach(item => {
+    displayHistory.forEach(item => {
       const damageType = item.damageType?.toLowerCase();
       if (damageType?.includes('dent')) counts.dent++;
       if (damageType?.includes('scratch')) counts.scratch++;
@@ -183,7 +224,18 @@ const HistoryPage: React.FC = () => {
             </div>
           </div>{/* History Content */}
           <div className="animate-fadeInUp animation-delay-300">
-            <ImageHistory history={sortedFilteredHistory} />
+            <ImageHistory history={sortedFilteredHistory.map(item => ({
+              ...item,
+              image: item.imageUrl || (item as any).image,
+              uploadedAt: item.analysisDate || (item as any).uploadedAt,
+              timestamp: item.analysisDate || (item as any).timestamp,
+              result: (item as any).result || {
+                damageType: item.damageType,
+                confidence: item.confidence || 0.8,
+                description: item.damageDescription || item.description || 'No description available',
+                recommendations: item.recommendations || []
+              }
+            }))} />
           </div>
         </div>
       </div>

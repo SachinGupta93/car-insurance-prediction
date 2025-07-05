@@ -58,58 +58,163 @@ const AnalysisVisualization: React.FC<AnalysisVisualizationProps> = ({
     // Draw damage regions or "no regions" message if overlay is enabled
     if (showOverlay) {
       if (damageRegions && damageRegions.length > 0) {
-        damageRegions.forEach(region => {
+        damageRegions.forEach((region, index) => {
           // Calculate actual pixel coordinates from percentages
           const x = (region.x / 100) * canvasWidth;
           const y = (region.y / 100) * canvasHeight;
           const width = (region.width / 100) * canvasWidth;
           const height = (region.height / 100) * canvasHeight;
-            // Draw rectangle
-          ctx.fillStyle = highlightColor;
+          
+          // Enhanced visual styling based on damage type and confidence
+          const confidence = region.confidence || 0.5;
+          const alpha = Math.max(0.3, confidence * 0.6); // More visible with higher confidence
+          
+          // Color coding based on damage type
+          let baseColor = 'rgba(239, 68, 68'; // Default red
+          if (region.damageType?.toLowerCase().includes('scratch')) {
+            baseColor = 'rgba(249, 115, 22'; // Orange for scratches
+          } else if (region.damageType?.toLowerCase().includes('dent')) {
+            baseColor = 'rgba(168, 85, 247'; // Purple for dents
+          } else if (region.damageType?.toLowerCase().includes('crack')) {
+            baseColor = 'rgba(239, 68, 68'; // Red for cracks
+          } else if (region.damageType?.toLowerCase().includes('paint')) {
+            baseColor = 'rgba(34, 197, 94'; // Green for paint issues
+          }
+          
+          // Draw semi-transparent fill
+          ctx.fillStyle = `${baseColor}, ${alpha})`;
           ctx.fillRect(x, y, width, height);
           
-          // Draw border
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; // Modern red
+          // Draw animated border for better visibility
+          ctx.strokeStyle = `${baseColor}, 0.9)`;
           ctx.lineWidth = 3;
+          ctx.setLineDash([8, 4]); // Dashed line for better visibility
           ctx.strokeRect(x, y, width, height);
+          ctx.setLineDash([]); // Reset dash pattern
           
-          // Prepare label text
-          const label = `${region.damageType} (${Math.round(region.confidence * 100)}%)`;
+          // Add corner markers for precise boundary indication
+          const markerSize = 8;
+          ctx.fillStyle = `${baseColor}, 1)`;
+          // Top-left corner
+          ctx.fillRect(x - 2, y - 2, markerSize, 4);
+          ctx.fillRect(x - 2, y - 2, 4, markerSize);
+          // Top-right corner
+          ctx.fillRect(x + width - markerSize + 2, y - 2, markerSize, 4);
+          ctx.fillRect(x + width - 2, y - 2, 4, markerSize);
+          // Bottom-left corner
+          ctx.fillRect(x - 2, y + height - 2, markerSize, 4);
+          ctx.fillRect(x - 2, y + height - markerSize + 2, 4, markerSize);
+          // Bottom-right corner
+          ctx.fillRect(x + width - markerSize + 2, y + height - 2, markerSize, 4);
+          ctx.fillRect(x + width - 2, y + height - markerSize + 2, 4, markerSize);
           
-          // Draw label background
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; // Dark background
-          ctx.fillRect(x, y - 25, ctx.measureText(label).width + 12, 20);
+          // Prepare enhanced label text with more details
+          const confidence_pct = Math.round(confidence * 100);
+          const label = `${region.damageType || 'Damage'} (${confidence_pct}%)`;
+          const regionNum = `#${index + 1}`;
           
-          // Draw label text
+          // Measure text dimensions
+          ctx.font = 'bold 12px Inter, sans-serif';
+          const labelWidth = ctx.measureText(label).width;
+          const regionNumWidth = ctx.measureText(regionNum).width;
+          const maxWidth = Math.max(labelWidth, regionNumWidth);
+          
+          // Position label to avoid going off-screen
+          let labelX = x;
+          let labelY = y - 35;
+          
+          // Adjust label position if it would go off the top of the canvas
+          if (labelY < 0) {
+            labelY = y + height + 25;
+          }
+          
+          // Adjust label position if it would go off the right edge
+          if (labelX + maxWidth + 12 > canvasWidth) {
+            labelX = canvasWidth - maxWidth - 12;
+          }
+          
+          // Draw enhanced label background with rounded corners effect
+          const labelBgHeight = 40;
+          const labelBgWidth = maxWidth + 16;
+          
+          // Background with gradient effect
+          const gradient = ctx.createLinearGradient(labelX, labelY - 5, labelX, labelY + labelBgHeight - 5);
+          gradient.addColorStop(0, 'rgba(15, 23, 42, 0.95)');
+          gradient.addColorStop(1, 'rgba(30, 41, 59, 0.95)');
+          
+          ctx.fillStyle = gradient;
+          ctx.fillRect(labelX, labelY - 5, labelBgWidth, labelBgHeight);
+          
+          // Border around label
+          ctx.strokeStyle = `${baseColor}, 0.7)`;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(labelX, labelY - 5, labelBgWidth, labelBgHeight);
+          
+          // Draw region number
+          ctx.fillStyle = '#94a3b8'; // Gray text for region number
+          ctx.font = 'bold 10px Inter, sans-serif';
+          ctx.fillText(regionNum, labelX + 8, labelY + 8);
+          
+          // Draw main label text
           ctx.fillStyle = '#f1f5f9'; // Light text
           ctx.font = 'bold 12px Inter, sans-serif';
+          ctx.fillText(label, labelX + 8, labelY + 24);
           
-          // Draw actual text
-          ctx.fillText(label, x + 6, y - 8);
+          // Add confidence indicator bar
+          const barWidth = 60;
+          const barHeight = 4;
+          const barX = labelX + 8;
+          const barY = labelY + 28;
+          
+          // Background bar
+          ctx.fillStyle = 'rgba(71, 85, 105, 0.5)';
+          ctx.fillRect(barX, barY, barWidth, barHeight);
+          
+          // Confidence bar
+          ctx.fillStyle = confidence > 0.7 ? '#22c55e' : confidence > 0.4 ? '#f59e0b' : '#ef4444';
+          ctx.fillRect(barX, barY, barWidth * confidence, barHeight);
         });
       } else {
-        // No regions to draw, but overlay is requested: show message
+        // Enhanced "no regions" message
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.font = 'bold 18px Inter, sans-serif';
         const message = 'No damage regions identified';
+        const subMessage = 'Analysis complete - no visible damage detected';
 
         const textMetrics = ctx.measureText(message);
-        const textWidth = textMetrics.width;
-        const approxCharHeight = 16; // font size
-        const bgHeight = approxCharHeight * 1.5; // Background box height
-        const padding = 10;
+        const subTextMetrics = ctx.measureText(subMessage);
+        const maxTextWidth = Math.max(textMetrics.width, subTextMetrics.width);
+        const bgHeight = 60;
+        const padding = 20;
 
-        const rectX = canvas.width / 2 - textWidth / 2 - padding;
-        const rectY = canvas.height / 2 - bgHeight / 2 - padding;
-        const rectWidth = textWidth + padding * 2;
-        const rectHeight = bgHeight + padding * 2;
+        const rectX = canvas.width / 2 - maxTextWidth / 2 - padding;
+        const rectY = canvas.height / 2 - bgHeight / 2;
+        const rectWidth = maxTextWidth + padding * 2;
+        const rectHeight = bgHeight;
 
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; // Dark slate, slightly transparent background
+        // Enhanced background with gradient
+        const gradient = ctx.createLinearGradient(rectX, rectY, rectX, rectY + rectHeight);
+        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.9)'); // Green gradient
+        gradient.addColorStop(1, 'rgba(22, 163, 74, 0.9)');
+        
+        ctx.fillStyle = gradient;
         ctx.fillRect(rectX, rectY, rectWidth, rectHeight);
         
-        ctx.fillStyle = '#e2e8f0'; // Light slate text
-        ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+        // Border
+        ctx.strokeStyle = 'rgba(22, 163, 74, 1)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+        
+        // Main message
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.fillText(message, canvas.width / 2, canvas.height / 2 - 8);
+        
+        // Sub message
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.fillText(subMessage, canvas.width / 2, canvas.height / 2 + 12);
       }
     }
   };

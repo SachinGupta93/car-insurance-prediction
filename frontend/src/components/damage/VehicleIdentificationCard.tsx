@@ -33,35 +33,95 @@ export const VehicleIdentificationCard: React.FC<VehicleIdentificationCardProps>
       </div>
 
       {vehicleInfo.confidence >= 50 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {vehicleInfo.make && (
-            <div className="flex items-center">
-              <span className="text-gray-600 text-sm font-medium w-20">Make:</span>
-              <span className="text-gray-900 font-semibold">{vehicleInfo.make}</span>
+        <div className="space-y-4">
+          {/* Primary Vehicle Information */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {vehicleInfo.make && (
+              <div className="flex items-center">
+                <span className="text-gray-600 text-sm font-medium w-20">Make:</span>
+                <span className="text-gray-900 font-semibold">{vehicleInfo.make}</span>
+              </div>
+            )}
+            {vehicleInfo.model && (
+              <div className="flex items-center">
+                <span className="text-gray-600 text-sm font-medium w-20">Model:</span>
+                <span className="text-gray-900 font-semibold">{vehicleInfo.model}</span>
+              </div>
+            )}
+            {vehicleInfo.year && (
+              <div className="flex items-center">
+                <span className="text-gray-600 text-sm font-medium w-20">Year:</span>
+                <span className="text-gray-900 font-semibold">{vehicleInfo.year}</span>
+              </div>
+            )}
+            {vehicleInfo.trimLevel && (
+              <div className="flex items-center">
+                <span className="text-gray-600 text-sm font-medium w-20">Trim:</span>
+                <span className="text-gray-900 font-semibold">{vehicleInfo.trimLevel}</span>
+              </div>
+            )}
+            {vehicleInfo.bodyStyle && (
+              <div className="flex items-center">
+                <span className="text-gray-600 text-sm font-medium w-20">Type:</span>
+                <span className="text-gray-900 font-semibold">{vehicleInfo.bodyStyle}</span>
+              </div>
+            )}
+            {vehicleInfo.color && (
+              <div className="flex items-center">
+                <span className="text-gray-600 text-sm font-medium w-20">Color:</span>
+                <span className="text-gray-900 font-semibold">{vehicleInfo.color}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Technical Specifications */}
+          {(vehicleInfo.engineSize || vehicleInfo.fuelType || vehicleInfo.marketSegment) && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Technical Specifications</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {vehicleInfo.engineSize && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 text-sm font-medium w-20">Engine:</span>
+                    <span className="text-gray-900 font-semibold">{vehicleInfo.engineSize}</span>
+                  </div>
+                )}
+                {vehicleInfo.fuelType && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 text-sm font-medium w-20">Fuel:</span>
+                    <span className="text-gray-900 font-semibold">{vehicleInfo.fuelType}</span>
+                  </div>
+                )}
+                {vehicleInfo.marketSegment && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 text-sm font-medium w-20">Segment:</span>
+                    <span className="text-gray-900 font-semibold">{vehicleInfo.marketSegment}</span>
+                  </div>
+                )}
+                {vehicleInfo.idvRange && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 text-sm font-medium w-20">IDV:</span>
+                    <span className="text-gray-900 font-semibold">{vehicleInfo.idvRange}</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          {vehicleInfo.model && (
-            <div className="flex items-center">
-              <span className="text-gray-600 text-sm font-medium w-20">Model:</span>
-              <span className="text-gray-900 font-semibold">{vehicleInfo.model}</span>
-            </div>
-          )}
-          {vehicleInfo.year && (
-            <div className="flex items-center">
-              <span className="text-gray-600 text-sm font-medium w-20">Year:</span>
-              <span className="text-gray-900 font-semibold">{vehicleInfo.year}</span>
-            </div>
-          )}
-          {vehicleInfo.trimLevel && (
-            <div className="flex items-center">
-              <span className="text-gray-600 text-sm font-medium w-20">Trim:</span>
-              <span className="text-gray-900 font-semibold">{vehicleInfo.trimLevel}</span>
-            </div>
-          )}
-          {vehicleInfo.bodyStyle && (
-            <div className="flex items-center">
-              <span className="text-gray-600 text-sm font-medium w-20">Type:</span>
-              <span className="text-gray-900 font-semibold">{vehicleInfo.bodyStyle}</span>
+
+          {/* Market Analysis */}
+          {vehicleInfo.marketSegment && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+              <div className="flex items-start">
+                <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-800 mb-1">Market Analysis</h4>
+                  <p className="text-sm text-blue-700">
+                    {vehicleInfo.marketSegment} segment vehicle with {vehicleInfo.make && vehicleInfo.model ? `${vehicleInfo.make} ${vehicleInfo.model}` : 'this model'} 
+                    {vehicleInfo.year && ` (${vehicleInfo.year})`} typically showing good resale value and parts availability.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>

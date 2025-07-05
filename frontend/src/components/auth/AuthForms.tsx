@@ -46,19 +46,34 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
       setLoading(false);
     }
   };
-
   const handleGoogleAuth = async () => {
     setError(null);
     setLoading(true);
+    
+    // Notify user about API enablement if needed
+    console.log('Starting Google authentication process...');
+    import('@/lib/firebase-config-check'); // Import to check configuration
+    
     try {
-      await signInWithGoogle();
+      console.log('Calling signInWithGoogle...');
+      const result = await signInWithGoogle();
+      console.log('Google sign in successful:', result.user.displayName);
       navigate('/dashboard');
-    } catch (err) {
-      const errorMessage = isSignup
-        ? 'Failed to sign up with Google.'
-        : 'Failed to sign in with Google.';
-      setError(err instanceof Error ? err.message : errorMessage);
+    } catch (err: any) {
       console.error(`Google ${mode} error:`, err);
+      
+      // Check for identity toolkit error
+      if (err?.message?.includes('auth/identity-toolkit-api-has-not-been-used')) {
+        setError('Google sign-in has not been enabled for this Firebase project. Please contact the administrator.');
+        // Import the debugging utility
+        const { debugFirebaseAuth } = await import('@/lib/firebase-auth');
+        debugFirebaseAuth();
+      } else {
+        const errorMessage = isSignup
+          ? 'Failed to sign up with Google.'
+          : 'Failed to sign in with Google.';
+        setError(err instanceof Error ? err.message : errorMessage);
+      }
     } finally {
       setLoading(false);
     }

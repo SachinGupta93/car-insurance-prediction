@@ -1,18 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone, FileWithPath } from 'react-dropzone';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
-import { useHistory } from '@/context/HistoryContext';
 import { useNotificationHelpers } from '@/context/NotificationContext';
 import { DamageResult } from '@/types';
 import DamageAnalyzer from './damage/DamageAnalyzer';
+import QuotaStatus from './QuotaStatus';
+import unifiedApiService from '@/services/unifiedApiService';
 
 interface ImageUploadProps {
   onImageUploaded?: (imageUrl: string, analysisResult: DamageResult) => void;
 }
 
 const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
-  const { firebaseUser, loadingAuth } = useFirebaseAuth();
-  const { addAnalysisToHistory } = useHistory();
+  const { firebaseUser, loading: loadingAuth } = useFirebaseAuth();
   const { success, error: notifyError } = useNotificationHelpers();
 
   const [uploading, setUploading] = useState(false);
@@ -148,14 +148,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
     setProgress(0);     // Reset progress
     setError(null);     // Clear previous errors
   };
-  const handleAnalysisComplete = async (result: DamageResult) => { // Make async
+  const handleAnalysisComplete = async (result: DamageResult) => {
     setAnalysisResult(result);
     setUploading(false);
     setProgress(100);
     success('Analysis Complete', `Successfully analyzed damage with ${(result.confidence * 100).toFixed(1)}% confidence`);
 
-  // Convert file to Base64 for history
-    let imageBase64 = ''; // Don't use preview (blob URL) as fallback
+    // Convert file to Base64 for callback and storage
+    let imageBase64 = '';
     if (selectedFile) {
       try {
         imageBase64 = await new Promise((resolve, reject) => {
@@ -165,31 +165,32 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
           reader.readAsDataURL(selectedFile);
         });
       } catch (error) {
-        console.error("Error converting image to Base64 for history:", error);
-        notifyError("History Save Error", "Could not save image preview to history.");
+        console.error("Error converting image to Base64 for callback:", error);
       }
     }
 
-    // Only proceed if we have a valid base64 string (not a blob URL)
+    // Call parent callback if provided
     if (onImageUploaded && imageBase64 && imageBase64.startsWith('data:')) {
       onImageUploaded(imageBase64, result);
     }
 
-    // Add to history
-    if (addAnalysisToHistory && selectedFile) { // selectedFile check is still relevant
-      addAnalysisToHistory({
-        imageUrl: imageBase64, // Use Base64 string
-        damageDescription: result.damageDescription || result.description,
-        repairEstimate: result.enhancedRepairCost?.conservative?.rupees || 'Not available',
-        damageType: result.damageType,
+    // Save analysis to history with proper image data
+    try {
+      const historyItem = {
+        image: imageBase64 || preview || '',
+        result: result,
+        filename: selectedFile?.name || 'analysis.jpg',
+        timestamp: new Date().toISOString(),
+        analysisDate: new Date().toISOString(),
         confidence: result.confidence,
-        description: result.description,
-        recommendations: result.recommendations || [],
-        severity: result.confidence > 0.8 ? 'severe' : result.confidence > 0.6 ? 'moderate' : 'minor'
-      }).catch((error) => {
-        console.error('Failed to save analysis to history:', error);
-        // Don't show error to user as the analysis was successful
-      });
+        severity: result.severity || 'unknown'
+      };
+      
+      await unifiedApiService.addAnalysisToHistory(historyItem);
+      console.log('✅ Analysis saved to history successfully');
+    } catch (error) {
+      console.error('❌ Failed to save analysis to history:', error);
+      // Don't show error to user as analysis was successful
     }
   };
 
@@ -276,6 +277,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
                   <h1 className="text-3xl font-bold text-black mb-2">
                     AI Car Damage Analyzer
                   </h1>
+                  
+                  {/* Quota Status */}
+                  <div className="mb-4 max-w-md mx-auto">
+                    <QuotaStatus />
+                  </div>
+                  
                   <p className="text-lg text-gray-600">
                     Upload an image of your car to get an instant damage analysis and repair estimate.
                   </p>

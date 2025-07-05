@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 
 interface AuthProps {
@@ -22,12 +21,11 @@ const Auth: React.FC<AuthProps> = ({
   redirectAuthenticated = false,
   redirectPath
 }) => {
-  const { user, loading } = useAuth();
-  const { firebaseUser, loadingAuth, getIdToken } = useFirebaseAuth();
+  const { firebaseUser, loading, getIdToken } = useFirebaseAuth();
   const location = useLocation();
   
-  const isAuthenticated = Boolean(user || firebaseUser);
-  const isLoading = loading || loadingAuth;
+  const isAuthenticated = Boolean(firebaseUser);
+  const isLoading = loading;
 
   // Handle redirection logic when authentication state changes
   useEffect(() => {

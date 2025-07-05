@@ -1,0 +1,1334 @@
+{
+  "test_metadata": {
+    "timestamp": "2025-07-03T17:08:39.090378",
+    "total_tests": 21,
+    "test_duration": 1751542719.090378
+  },
+  "summary_statistics": {
+    "total_tests": 21,
+    "gemini_successes": 0,
+    "local_successes": 0,
+    "gemini_failures": 1,
+    "local_failures": 21,
+    "brand_accuracy": {
+      "Rolls-Royce": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Bentley": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Ferrari": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "BMW": {
+        "total": 4,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Mercedes-Benz": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Audi": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Volvo": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Toyota": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Honda": {
+        "total": 1,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Hyundai": {
+        "total": 2,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Tata": {
+        "total": 2,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Maruti Suzuki": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      }
+    },
+    "segment_accuracy": {
+      "Ultra-Luxury": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Super-Luxury": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Luxury": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Premium": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Mid-Range": {
+        "total": 4,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Economy": {
+        "total": 3,
+        "local_correct": 0,
+        "gemini_correct": 0
+      },
+      "Entry": {
+        "total": 2,
+        "local_correct": 0,
+        "gemini_correct": 0
+      }
+    }
+  },
+  "detailed_results": [
+    {
+      "car_info": {
+        "make": "Rolls-Royce",
+        "model": "Ghost",
+        "year": 2022,
+        "segment": "Ultra-Luxury",
+        "expected_idv": 55000000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7637660539215686,
+          "contrast": 0.1368852183151443,
+          "edge_density": 0.011979166666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:14.454150",
+      "local_time": 0.04364442825317383,
+      "gemini_error": "429 You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. [violations {\n}\nviolations {\n}\nviolations {\n}\n, links {\n  description: \"Learn more about Gemini API quotas\"\n  url: \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n}\n, retry_delay {\n  seconds: 43\n}\n]"
+    },
+    {
+      "car_info": {
+        "make": "Bentley",
+        "model": "Continental GT",
+        "year": 2021,
+        "segment": "Ultra-Luxury",
+        "expected_idv": 45000000,
+        "body_style": "Coupe"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7636871160130719,
+          "contrast": 0.1370795865104166,
+          "edge_density": 0.012110416666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:17.889225",
+      "local_time": 0.02783203125
+    },
+    {
+      "car_info": {
+        "make": "Ferrari",
+        "model": "488 GTB",
+        "year": 2020,
+        "segment": "Ultra-Luxury",
+        "expected_idv": 60000000,
+        "body_style": "Coupe"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7638011274509804,
+          "contrast": 0.1368397653372641,
+          "edge_density": 0.01188125,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:18.953892",
+      "local_time": 0.022791147232055664
+    },
+    {
+      "car_info": {
+        "make": "BMW",
+        "model": "7 Series",
+        "year": 2022,
+        "segment": "Super-Luxury",
+        "expected_idv": 35000000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7624762663398692,
+          "contrast": 0.14045218737633072,
+          "edge_density": 0.012152083333333334,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:20.050413",
+      "local_time": 0.04729175567626953
+    },
+    {
+      "car_info": {
+        "make": "Mercedes-Benz",
+        "model": "S-Class",
+        "year": 2021,
+        "segment": "Super-Luxury",
+        "expected_idv": 40000000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.763365637254902,
+          "contrast": 0.13790524558966985,
+          "edge_density": 0.013116666666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:21.123825",
+      "local_time": 0.0303647518157959
+    },
+    {
+      "car_info": {
+        "make": "Audi",
+        "model": "A8",
+        "year": 2023,
+        "segment": "Super-Luxury",
+        "expected_idv": 32000000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7618565359477124,
+          "contrast": 0.14226608614438585,
+          "edge_density": 0.011897916666666666,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:22.182191",
+      "local_time": 0.026051998138427734
+    },
+    {
+      "car_info": {
+        "make": "BMW",
+        "model": "5 Series",
+        "year": 2021,
+        "segment": "Luxury",
+        "expected_idv": 25000000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.76258,
+          "contrast": 0.14027667837642127,
+          "edge_density": 0.011883333333333333,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:23.235983",
+      "local_time": 0.02292323112487793
+    },
+    {
+      "car_info": {
+        "make": "Mercedes-Benz",
+        "model": "E-Class",
+        "year": 2022,
+        "segment": "Luxury",
+        "expected_idv": 27000000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7634651960784314,
+          "contrast": 0.1377309779579879,
+          "edge_density": 0.01290625,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:24.281962",
+      "local_time": 0.018905162811279297
+    },
+    {
+      "car_info": {
+        "make": "BMW",
+        "model": "X5",
+        "year": 2020,
+        "segment": "Luxury",
+        "expected_idv": 28000000,
+        "body_style": "SUV"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7626571650326798,
+          "contrast": 0.14012432217569376,
+          "edge_density": 0.011660416666666666,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:25.333851",
+      "local_time": 0.025577306747436523
+    },
+    {
+      "car_info": {
+        "make": "Volvo",
+        "model": "XC40",
+        "year": 2021,
+        "segment": "Premium",
+        "expected_idv": 1500000,
+        "body_style": "SUV"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7639411437908497,
+          "contrast": 0.136539692663668,
+          "edge_density": 0.011516666666666666,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:26.384281",
+      "local_time": 0.03178119659423828
+    },
+    {
+      "car_info": {
+        "make": "BMW",
+        "model": "3 Series",
+        "year": 2020,
+        "segment": "Premium",
+        "expected_idv": 1800000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7625247549019608,
+          "contrast": 0.14038724804093,
+          "edge_density": 0.011910416666666666,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:27.441482",
+      "local_time": 0.03020024299621582
+    },
+    {
+      "car_info": {
+        "make": "Mercedes-Benz",
+        "model": "C-Class",
+        "year": 2021,
+        "segment": "Premium",
+        "expected_idv": 1700000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7634277124183007,
+          "contrast": 0.13781416945476826,
+          "edge_density": 0.012916666666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:28.501371",
+      "local_time": 0.03899383544921875
+    },
+    {
+      "car_info": {
+        "make": "Toyota",
+        "model": "Camry",
+        "year": 2020,
+        "segment": "Mid-Range",
+        "expected_idv": 900000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7614905065359477,
+          "contrast": 0.1431667041865947,
+          "edge_density": 0.012029166666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:29.565963",
+      "local_time": 0.024524927139282227
+    },
+    {
+      "car_info": {
+        "make": "Honda",
+        "model": "City",
+        "year": 2022,
+        "segment": "Mid-Range",
+        "expected_idv": 700000,
+        "body_style": "Sedan"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7638820343137255,
+          "contrast": 0.13665260388174885,
+          "edge_density": 0.0116625,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:30.618367",
+      "local_time": 0.022481679916381836
+    },
+    {
+      "car_info": {
+        "make": "Hyundai",
+        "model": "Creta",
+        "year": 2021,
+        "segment": "Mid-Range",
+        "expected_idv": 800000,
+        "body_style": "SUV"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7611525653594772,
+          "contrast": 0.14410700211493585,
+          "edge_density": 0.012116666666666666,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:31.668807",
+      "local_time": 0.028708934783935547
+    },
+    {
+      "car_info": {
+        "make": "Tata",
+        "model": "Harrier",
+        "year": 2022,
+        "segment": "Mid-Range",
+        "expected_idv": 900000,
+        "body_style": "SUV"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7638791094771242,
+          "contrast": 0.13668108718047872,
+          "edge_density": 0.011685416666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:32.724401",
+      "local_time": 0.024905681610107422
+    },
+    {
+      "car_info": {
+        "make": "Maruti Suzuki",
+        "model": "Swift",
+        "year": 2021,
+        "segment": "Economy",
+        "expected_idv": 350000,
+        "body_style": "Hatchback"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Hyundai",
+          "model": "Verna",
+          "year": "2019",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Mid-range",
+          "idvRange": "\u20b9481,961 - \u20b9530,157",
+          "color": "Silver",
+          "confidence": 0.8808705283744563,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 88% confidence - Mid-range Hyundai Verna"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7592851470588236,
+          "contrast": 0.14897585604378355,
+          "edge_density": 0.01238125,
+          "dominant_colors": [
+            {
+              "color": [
+                173,
+                200,
+                209
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:33.778198",
+      "local_time": 0.02718520164489746
+    },
+    {
+      "car_info": {
+        "make": "Hyundai",
+        "model": "i20",
+        "year": 2020,
+        "segment": "Economy",
+        "expected_idv": 400000,
+        "body_style": "Hatchback"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Baleno",
+          "year": "2022",
+          "trimLevel": "Standard",
+          "bodyStyle": "Hatchback",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9650,249 - \u20b9715,274",
+          "color": "Silver",
+          "confidence": 0.8028479430902274,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 80% confidence - Economy Maruti Suzuki Baleno"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7612323039215686,
+          "contrast": 0.1439544024430257,
+          "edge_density": 0.01194375,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                210
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:34.829733",
+      "local_time": 0.029499292373657227
+    },
+    {
+      "car_info": {
+        "make": "Tata",
+        "model": "Nexon",
+        "year": 2022,
+        "segment": "Economy",
+        "expected_idv": 450000,
+        "body_style": "SUV"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Maruti Suzuki",
+          "model": "Dzire",
+          "year": "2024",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Economy",
+          "idvRange": "\u20b9850,000 - \u20b9935,000",
+          "color": "Silver",
+          "confidence": 0.8288738289450532,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 82% confidence - Economy Maruti Suzuki Dzire"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7639311683006536,
+          "contrast": 0.13655742792027278,
+          "edge_density": 0.011527083333333334,
+          "dominant_colors": [
+            {
+              "color": [
+                174,
+                201,
+                211
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:35.895861",
+      "local_time": 0.03325700759887695
+    },
+    {
+      "car_info": {
+        "make": "Maruti Suzuki",
+        "model": "Alto K10",
+        "year": 2021,
+        "segment": "Entry",
+        "expected_idv": 200000,
+        "body_style": "Hatchback"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Hyundai",
+          "model": "Verna",
+          "year": "2019",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Mid-range",
+          "idvRange": "\u20b9481,961 - \u20b9530,157",
+          "color": "Silver",
+          "confidence": 0.8808705283744563,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 88% confidence - Mid-range Hyundai Verna"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7593008333333333,
+          "contrast": 0.14897327273627956,
+          "edge_density": 0.012352083333333333,
+          "dominant_colors": [
+            {
+              "color": [
+                173,
+                200,
+                209
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:36.959406",
+      "local_time": 0.027594327926635742
+    },
+    {
+      "car_info": {
+        "make": "Maruti Suzuki",
+        "model": "WagonR",
+        "year": 2020,
+        "segment": "Entry",
+        "expected_idv": 250000,
+        "body_style": "Hatchback"
+      },
+      "local_prediction": {
+        "vehicle_identification": {
+          "make": "Hyundai",
+          "model": "Verna",
+          "year": "2019",
+          "trimLevel": "Standard",
+          "bodyStyle": "Sedan",
+          "engineSize": "1.5L",
+          "fuelType": "Petrol",
+          "marketSegment": "Mid-range",
+          "idvRange": "\u20b9481,961 - \u20b9530,157",
+          "color": "Silver",
+          "confidence": 0.8808705283744563,
+          "luxuryIndicators": 0,
+          "premiumIndicators": 0,
+          "analysisScore": 1,
+          "identificationDetails": "Market-based analysis: 88% confidence - Mid-range Hyundai Verna"
+        },
+        "damage_assessment": {
+          "regions": [],
+          "overall": {
+            "severity": "None"
+          },
+          "insurance": {
+            "claim_recommendation": "No claim needed"
+          }
+        },
+        "image_metrics": {
+          "brightness": 0.7592632598039216,
+          "contrast": 0.14901376265193217,
+          "edge_density": 0.012360416666666667,
+          "dominant_colors": [
+            {
+              "color": [
+                173,
+                200,
+                209
+              ],
+              "percentage": 100
+            }
+          ]
+        }
+      },
+      "gemini_prediction": null,
+      "local_success": false,
+      "gemini_success": false,
+      "timestamp": "2025-07-03T17:08:38.011142",
+      "local_time": 0.02682805061340332
+    }
+  ]
+}

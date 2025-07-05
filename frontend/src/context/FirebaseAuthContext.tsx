@@ -1,34 +1,48 @@
 // Description: Vite configuration file for a React project
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import { User as FirebaseUser, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase'; // Ensure this path is correct
+import unifiedApiService from '@/services/unifiedApiService';
 
 interface IFirebaseAuthContext {
   firebaseUser: FirebaseUser | null;
-  loadingAuth: boolean;
+  loading: boolean; // Renamed from loadingAuth for consistency with Dashboard
   getIdToken: () => Promise<string | null>;
+  signOut: () => Promise<void>;
 }
 
 const FirebaseAuthContext = createContext<IFirebaseAuthContext | undefined>(undefined);
 
 export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loading, setLoading] = useState(true); // Renamed from loadingAuth
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       
       // Store token in localStorage when user changes
       if (user) {
-        user.getIdToken().then(token => {
+        try {
+          const token = await user.getIdToken();
           localStorage.setItem('firebaseIdToken', token);
-        });
+          
+          // Automatically ensure user profile exists
+          console.log('🔄 Auto-creating user profile for:', user.email);
+          await unifiedApiService.ensureUserProfile({
+            email: user.email,
+            display_name: user.displayName || user.email?.split('@')[0] || 'User'
+          });
+          console.log('✅ User profile ensured for:', user.email);
+        } catch (error) {
+          console.error('❌ Error ensuring user profile:', error);
+          // Don't block user login if profile creation fails
+        }
       } else {
         localStorage.removeItem('firebaseIdToken');
       }
       
-      setLoadingAuth(false);
+      setLoading(false);
     });
     return () => unsubscribe(); // Cleanup subscription on unmount
   }, []);
@@ -45,11 +59,22 @@ export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const signOut = async (): Promise<void> => {
+    try {
+      await firebaseSignOut(auth);
+      localStorage.removeItem('firebaseIdToken');
+    } catch (error) {
+      console.error('Error signing out:', error);
+      throw error;
+    }
+  };
+
   return (
     <FirebaseAuthContext.Provider value={{ 
       firebaseUser, 
-      loadingAuth,
-      getIdToken: getIdTokenMethod
+      loading, // Renamed from loadingAuth
+      getIdToken: getIdTokenMethod,
+      signOut
     }}>
       {children}
     </FirebaseAuthContext.Provider>

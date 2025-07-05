@@ -17,114 +17,53 @@ def initialize_firebase():
         dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
         
         if not firebase_admin._apps:
-            # Check for service account file from environment variable
-            service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            # For development mode, we still want to connect to the real Firebase
+            # but with better error handling
             
-            # Check for service account in common locations if environment variable not set
-            if not service_account_path or not os.path.exists(service_account_path):
-                # Look for service account in project directory
-                possible_locations = [
-                    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "service-account.json"),
-                    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "firebase-service-account.json"),
-                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "service-account.json"),
-                    os.path.join(os.path.dirname(__file__), "service-account.json")
-                ]
+            # Try to initialize Firebase with the Web SDK configuration
+            logger.info("Attempting to initialize Firebase Admin SDK for development")
+            
+            # Use the project ID from environment variables
+            project_id = os.getenv('FIREBASE_PROJECT_ID', 'car-13674')
+            database_url = os.getenv('FIREBASE_DATABASE_URL', 'https://car-13674-default-rtdb.firebaseio.com')
+            
+            try:
+                # Initialize Firebase with minimal config that works with client-side auth
+                firebase_admin.initialize_app(options={
+                    'projectId': project_id,
+                    'databaseURL': database_url
+                })
+                logger.info(f"Firebase Admin SDK initialized successfully for project: {project_id}")
+                return True
                 
-                for location in possible_locations:
-                    if os.path.exists(location):
-                        service_account_path = location
-                        logger.info(f"Found service account at: {location}")
-                        break
-            
-            if service_account_path and os.path.exists(service_account_path):
-                # Initialize with service account if file exists
-                try:
-                    logger.info(f"Attempting to initialize Firebase with service account: {service_account_path}")
-                    
-                    # Validate if the service account is a mock/test file
-                    with open(service_account_path, 'r') as f:
-                        import json
-                        service_data = json.load(f)
-                        
-                    # Check if this is a mock service account (common indicators)
-                    is_mock = (
-                        'mock' in service_data.get('client_email', '').lower() or
-                        'mock' in service_data.get('private_key_id', '').lower() or
-                        service_data.get('client_id') == '000000000000000000000'
-                    )
-                    
-                    if is_mock and dev_mode:
-                        logger.warning("DEV MODE: Mock service account detected, using emulator-friendly config")
-                        # For development with mock credentials, use minimal config
+            except Exception as firebase_error:
+                logger.warning(f"Failed to initialize Firebase Admin SDK: {str(firebase_error)}")
+                
+                if dev_mode:
+                    # In development mode, try to create a mock but functional app
+                    logger.warning("DEV MODE: Creating minimal Firebase app for development")
+                    try:
+                        # Create a minimal app that can at least handle the project structure
                         firebase_admin.initialize_app(options={
-                            'projectId': service_data.get('project_id', 'dev-project')
-                        })
-                        logger.info("Firebase Admin SDK initialized with mock service account for development")
-                    elif is_mock and not dev_mode:
-                        logger.error("PRODUCTION: Mock service account detected, cannot initialize in production")
-                        raise ValueError("Mock service account file detected in production environment")
-                    else:
-                        # Real service account
-                        cred = firebase_admin.credentials.Certificate(service_account_path)
-                        firebase_admin.initialize_app(cred)
-                        logger.info(f"Firebase Admin SDK initialized successfully with service account")
-                        
-                except json.JSONDecodeError as json_error:
-                    logger.error(f"Invalid JSON in service account file: {str(json_error)}")
-                    if dev_mode:
-                        logger.warning("DEV MODE: Invalid service account JSON, using minimal config")
-                        firebase_admin.initialize_app(options={
-                            'projectId': os.getenv('FIREBASE_PROJECT_ID') or 'dev-project'
+                            'projectId': project_id
                         })
                         logger.info("Firebase Admin SDK initialized with minimal config for development")
-                    else:
-                        raise json_error
-                except Exception as cert_error:
-                    logger.error(f"Failed to initialize with service account: {str(cert_error)}")
-                    if dev_mode:
-                        # In dev mode, create a dummy app with minimal config
-                        logger.warning("DEV MODE: Service account failed, using minimal config for development")
-                        firebase_admin.initialize_app(options={
-                            'projectId': os.getenv('FIREBASE_PROJECT_ID') or 'dev-project'
-                        })
-                        logger.info("Firebase Admin SDK initialized with minimal config for development")
-                    else:
-                        # In production, re-raise the error
-                        raise cert_error
-            else:
-                # Try to initialize without explicit credentials (for development/testing)
-                try:
-                    # This will work in local development if FIREBASE_API_KEY is set in .env
-                    logger.info("No service account found, trying environment variables")
-                    firebase_admin.initialize_app(options={
-                        'projectId': os.getenv('FIREBASE_PROJECT_ID') or 'dev-project'
-                    })
-                    logger.info("Firebase Admin SDK initialized with environment variables")
-                except Exception as inner_e:
-                    logger.warning(f"Failed to initialize with environment variables: {str(inner_e)}")
+                        return True
+                    except Exception as minimal_error:
+                        logger.error(f"Failed to create minimal Firebase app: {str(minimal_error)}")
+                        return False
+                else:
+                    # In production, this is a real error
+                    raise firebase_error
                     
-                    if dev_mode:
-                        # In dev mode, create a dummy app with minimal config
-                        logger.warning("DEV MODE: Initializing Firebase with minimal config for development")
-                        firebase_admin.initialize_app(options={
-                            'projectId': 'dev-project'
-                        })
-                        logger.info("Firebase Admin SDK initialized with minimal config for development")
-                    else:
-                        # In production, try default credentials
-                        try:
-                            firebase_admin.initialize_app()
-                            logger.info("Firebase Admin SDK initialized with application default credentials")
-                        except Exception as default_e:
-                            logger.error(f"Failed to initialize with default credentials: {str(default_e)}")
-                            raise default_e
         return True
     except Exception as e:
         logger.error(f"Error initializing Firebase: {str(e)}")
+        dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
         if dev_mode:
             # In dev mode, we can continue without Firebase
             logger.warning("DEV MODE: Continuing without Firebase initialization")
-            return True
+            return False
         return False
 
 def verify_firebase_token(token):
@@ -136,7 +75,7 @@ def verify_firebase_token(token):
     if dev_mode and token == 'DEVELOPMENT_TOKEN_FOR_TESTING':
         logger.warning("DEV MODE: Using development test token")
         return {
-            'uid': 'dev-user-123',
+            'uid': 'AWorsS210YShgNlvMCjPFK2nDpg1',  # Use actual user ID from Firebase data
             'email': 'dev@example.com',
             'name': 'Development User',
             'dev_mode': True
@@ -147,8 +86,9 @@ def verify_firebase_token(token):
             initialize_firebase()
             
         try:
+            # Try to verify the actual Firebase token first
             decoded_token = firebase_admin.auth.verify_id_token(token)
-            logger.info(f"Firebase token successfully verified for user: {decoded_token.get('uid', 'unknown')}")
+            logger.info(f"✅ Firebase token successfully verified for user: {decoded_token.get('uid', 'unknown')}")
             return decoded_token
         except firebase_admin.auth.InvalidIdTokenError:
             logger.error("Invalid Firebase token: The token is malformed or expired")
@@ -197,13 +137,31 @@ def verify_firebase_token(token):
     except Exception as e:
         logger.error(f"Error verifying Firebase token: {str(e)}")
         if dev_mode:
-            logger.warning(f"DEV MODE: Bypassing token verification error in development mode: {str(e)}")
-            return {
-                'uid': 'dev-error-123',
-                'email': 'dev-error@example.com',
-                'name': 'Development Error User',
-                'dev_mode': True
-            }
+            logger.warning(f"DEV MODE: Token verification failed, extracting user info from token payload: {str(e)}")
+            
+            # Try to extract user info from the token payload directly (for development)
+            try:
+                import jwt
+                import json
+                
+                # Decode token without verification (only for development)
+                decoded_payload = jwt.decode(token, options={"verify_signature": False})
+                
+                return {
+                    'uid': decoded_payload.get('user_id') or decoded_payload.get('uid') or 'dev-extracted-uid',
+                    'email': decoded_payload.get('email', 'dev-extracted@example.com'),
+                    'name': decoded_payload.get('name', 'Development Extracted User'),
+                    'dev_mode': True,
+                    'extracted_from_token': True
+                }
+            except Exception as decode_error:
+                logger.error(f"Failed to decode token payload: {str(decode_error)}")
+                return {
+                    'uid': 'dev-error-123',
+                    'email': 'dev-error@example.com',
+                    'name': 'Development Error User',
+                    'dev_mode': True
+                }
         raise ValueError(f"Firebase verification error: {str(e)}")
 
 def get_firebase_config():

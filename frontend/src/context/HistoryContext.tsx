@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useFirebaseService } from '@/services/firebaseService';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
+import { HistoricalAnalysis } from '@/types';
 
 // Define the shape of a single analysis history item
 export interface AnalysisHistoryItem {
@@ -51,8 +52,36 @@ export const HistoryProvider = ({ children }: { children: ReactNode }) => {
     
     try {
       const firebaseHistory = await firebaseService.getAnalysisHistory();
-      // Sort by analysis date (newest first)
-      const sortedHistory = firebaseHistory.sort((a, b) => 
+      // Convert HistoricalAnalysis to AnalysisHistoryItem and sort by date (newest first)
+      const convertedHistory: AnalysisHistoryItem[] = firebaseHistory.map(item => {
+        // Safely extract damage description with fallbacks
+        const damageDescription = item.result?.damageDescription || 
+                                 item.result?.description || 
+                                 'No damage description available';
+        
+        // Safely extract other fields with fallbacks
+        const repairEstimate = item.result?.repairEstimate || 
+                              (item.result?.enhancedRepairCost?.conservative?.rupees 
+                                ? item.result.enhancedRepairCost.conservative.rupees
+                                : 'N/A');
+        
+        return {
+          id: item.id,
+          userId: item.userId || '',
+          imageUrl: item.image || '',
+          analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(),
+          damageDescription,
+          repairEstimate,
+          damageType: item.result?.damageType || 'Unknown',
+          confidence: item.confidence || item.result?.confidence || 0,
+          description: item.result?.description || damageDescription,
+          recommendations: item.result?.recommendations || [],
+          location: undefined, // location is not part of DamageResult
+          severity: item.severity || item.result?.severity || 'minor'
+        };
+      });
+      
+      const sortedHistory = convertedHistory.sort((a, b) => 
         new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime()
       );
       setHistory(sortedHistory);
@@ -97,8 +126,27 @@ export const HistoryProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
+      // Convert AnalysisHistoryItem to HistoricalAnalysis format for Firebase
+      const historicalAnalysisData: Omit<HistoricalAnalysis, 'id' | 'userId' | 'uploadedAt'> = {
+        timestamp: new Date().toISOString(),
+        image: itemData.imageUrl,
+        result: {
+          damageType: itemData.damageType,
+          confidence: itemData.confidence,
+          description: itemData.description,
+          damageDescription: itemData.damageDescription,
+          recommendations: itemData.recommendations,
+          repairEstimate: itemData.repairEstimate,
+          severity: itemData.severity
+        },
+        analysisDate: new Date().toISOString(),
+        confidence: itemData.confidence,
+        filename: itemData.imageUrl.split('/').pop() || 'Unknown',
+        severity: itemData.severity
+      };
+      
       // Add to Firebase
-      const newId = await firebaseService.addAnalysisToHistory(itemData);
+      const newId = await firebaseService.addAnalysisToHistory(historicalAnalysisData);
       
       // Update local state immediately for better UX
       const newItem: AnalysisHistoryItem = {
