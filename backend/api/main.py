@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 from flask_cors import CORS
 import logging
 from .routes import api
@@ -17,9 +17,9 @@ def create_app():
     # Configure CORS
     CORS(app, resources={
         r"/*": {
-            "origins": ["http://localhost:5173"],
-            "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
+            "origins": ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Dev-Auth-Bypass"],
             "supports_credentials": True
         }
     })
@@ -36,9 +36,11 @@ def create_app():
     @app.after_request
     def after_request(response):
         """Add CORS headers to response"""
-        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:5173')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+        origin = request.headers.get('Origin')
+        if origin in ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000']:
+            response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Dev-Auth-Bypass')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         return response
     

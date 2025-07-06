@@ -1,0 +1,54 @@
+{
+  "rules": {
+    // Default rules for root level
+    ".read": false,
+    ".write": false,
+    
+    // Authenticated users can access data
+    "users": {
+      // Only admins can list all users
+      ".read": false,
+      ".write": false,
+      
+      "$uid": {
+        // Users can read and write their own data
+        ".read": "auth != null && auth.uid == $uid",
+        // For development testing, also allow server-side writes (no auth requirement)
+        ".write": "auth != null && auth.uid == $uid || true",
+        
+        // Specific paths
+        "analysisHistory": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && auth.uid == $uid || true",
+          "$record_id": {
+            ".read": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && auth.uid == $uid || true"
+          }
+        },
+        
+        "vehicles": {
+          ".read": "auth != null && auth.uid == $uid", 
+          ".write": "auth != null && auth.uid == $uid || true",
+          "$vehicle_id": {
+            ".read": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && auth.uid == $uid || true"
+          }
+        },
+        
+        "insurance": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && auth.uid == $uid || true",
+          "$insurance_id": {
+            ".read": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && auth.uid == $uid || true"
+          }
+        },
+        
+        "profile": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && auth.uid == $uid || true"
+        }
+      }
+    }
+  }
+}

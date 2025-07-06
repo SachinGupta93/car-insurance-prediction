@@ -1,14 +1,17 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
 import traceback
-import sys
 from datetime import datetime
-from config.firebase_config import initialize_firebase, verify_firebase_token, get_firebase_config
-from api.routes import api # Changed api_bp to api
-import os
+from backend.config.firebase_config import initialize_firebase, verify_firebase_token, get_firebase_config
+from backend.api.routes import api # Changed api_bp to api
+from backend.api.admin_routes import admin_bp  # Add admin routes
 from dotenv import load_dotenv
-from rate_limiter import global_rate_limiter
+from backend.rate_limiter import global_rate_limiter
 
 # Load environment variables
 load_dotenv()
@@ -18,7 +21,7 @@ logging.basicConfig(
     level=logging.DEBUG,  # Set to DEBUG for more detailed logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)  # Log to console
+        logging.StreamHandler()  # Log to console
     ]
 )
 logger = logging.getLogger(__name__)
@@ -32,7 +35,7 @@ def create_app():
     
     # CORS configuration with more permissive settings for development
     CORS(app, 
-         resources={r"/api/*": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",
+         resources={r"/*": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",
                                           "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175"],
                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                                "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Dev-Mode", "X-Dev-Auth-Bypass"]}},
@@ -211,6 +214,11 @@ def create_app():
 
     # Register API blueprint
     app.register_blueprint(api, url_prefix='/api') # Changed api_bp to api
+    
+    # Register admin blueprint (dev mode only)
+    if dev_mode:
+        app.register_blueprint(admin_bp, url_prefix='/api')
+        logger.info("✅ Admin routes registered for development mode")
 
     # Root endpoint for health check
     @app.route('/')
@@ -260,8 +268,8 @@ if __name__ == '__main__':
         os.environ['FLASK_ENV'] = 'development'
         os.environ['FLASK_DEBUG'] = '1'
         
-        # Load port from environment variable, default to 5174
-        port = int(os.environ.get('PORT', 5174))
+        # Load port from environment variable, default to 8000
+        port = int(os.environ.get('PORT', 8000))
         
         # Create and configure the app
         app = create_app()

@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
+import { useDataCache } from '@/context/DataCacheContext';
 
 const Navbar: React.FC = () => {
   const { firebaseUser, loading: loadingAuth, signOut } = useFirebaseAuth();
+  const { getAnalysisHistory, getAnalyticsData } = useDataCache();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();  const isActive = (path: string) => {
     return location.pathname === path ? 'bg-rose-200 text-black' : 'text-gray-700 hover:text-black';
   };
+
+  // Prefetch data when user is authenticated
+  useEffect(() => {
+    if (firebaseUser && !loadingAuth) {
+      // Prefetch data in background to improve page load times
+      getAnalysisHistory().catch(console.error);
+      getAnalyticsData().catch(console.error);
+    }
+  }, [firebaseUser, loadingAuth, getAnalysisHistory, getAnalyticsData]);
 
   const handleLogout = async () => {
     try {
@@ -62,9 +73,6 @@ const Navbar: React.FC = () => {
                 <Link to="/insurance" className={`px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105 ${isActive('/insurance')}`}>
                   Insurance
                 </Link>
-                <Link to="/resources" className={`px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105 ${isActive('/resources')}`}>
-                  Resources
-                </Link>            
                 <div className="h-6 w-px bg-rose-200 mx-2"></div>
                 <button 
                   onClick={handleLogout} 
@@ -84,12 +92,6 @@ const Navbar: React.FC = () => {
                 </Link>
                 <Link to="/signup" className="px-4 py-2 rounded-xl bg-emerald-200 text-black hover:bg-emerald-300 hover:shadow-md hover:scale-105 transition-all duration-300">
                   Sign Up
-                </Link>
-                <Link to="/resources" className={`px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105 ${isActive('/resources')}`}>
-                  Resources
-                </Link>
-                <Link to="/support" className={`px-4 py-2 rounded-xl transition-all duration-300 hover:scale-105 ${isActive('/support')}`}>
-                  Support
                 </Link>
               </>
             )}
@@ -141,16 +143,6 @@ const Navbar: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
                   <span>Insurance</span>
-                </Link>
-                <Link 
-                  to="/resources" 
-                  className={`px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-3 ${isActive('/resources') ? 'bg-rose-200/30 dark:bg-primary-700/30 text-black dark:text-white' : 'text-gray-600 dark:text-primary-200 hover:text-black dark:hover:text-white'}`}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <span>Resources</span>
                 </Link>
                 <Link 
                   to="/support" 
@@ -206,16 +198,6 @@ const Navbar: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                   </svg>
                   <span>Sign Up</span>
-                </Link>
-                <Link 
-                  to="/resources" 
-                  className={`px-4 py-3 rounded-xl transition-all duration-300 flex items-center space-x-3 ${isActive('/resources') ? 'bg-rose-200/30 dark:bg-primary-700/30 text-black dark:text-white' : 'text-gray-600 dark:text-primary-200 hover:text-black dark:hover:text-white'}`}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <span>Resources</span>
                 </Link>
                 <Link 
                   to="/support" 

@@ -129,8 +129,8 @@ const ImageHistory: React.FC<ImageHistoryProps> = ({ history: historyProp, onCle
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid gap-6">
-          {history.map((item) => (
-            <Card key={item.id} className="bg-white/80 backdrop-blur-lg border-gray-200 shadow-lg hover:shadow-xl transition-all duration-300">
+          {history.map((item, index) => (
+            <Card key={`${item.id}-${item.timestamp || index}`} className="bg-white/80 backdrop-blur-lg border-gray-200 shadow-lg hover:shadow-xl transition-all duration-300">
               <CardHeader className="pb-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
@@ -138,7 +138,10 @@ const ImageHistory: React.FC<ImageHistoryProps> = ({ history: historyProp, onCle
                     <div className="relative">
                       <div 
                         className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-rose-300 transition-all duration-300"
-                        onClick={() => (item.image || item.imageUrl) && handleImageClick(item.image || item.imageUrl)}
+                        onClick={() => {
+                          const imageUrl = item.image || item.imageUrl;
+                          if (imageUrl) handleImageClick(imageUrl);
+                        }}
                       >
                         {(item.image && item.image.length > 0) || (item.imageUrl && item.imageUrl.length > 0) ? (
                           <img 
@@ -307,7 +310,7 @@ const ImageHistory: React.FC<ImageHistoryProps> = ({ history: historyProp, onCle
                         <h4 className="font-semibold text-gray-800 mb-2">Identified Damage Regions</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           {item.result.identifiedDamageRegions.map((region, index) => (
-                            <div key={index} className="bg-gray-50 p-3 rounded-lg">
+                            <div key={`${item.id}-region-${index}`} className="bg-gray-50 p-3 rounded-lg">
                               <div className="flex justify-between items-center">
                                 <span className="font-medium text-sm">{region.damageType}</span>
                                 <Badge variant="outline" className="text-xs">

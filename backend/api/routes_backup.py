@@ -1319,7 +1319,7 @@ def debug_user_data():
             }
         }
         
-                logger.info(f"🔍 debug_user_data: Debug info compiled")
+        logger.info(f"🔍 debug_user_data: Debug info compiled")
         return jsonify(debug_info), 200
         
     except Exception as e:
@@ -2143,3 +2143,4 @@ def save_analysis_result():
         logger.error(f"💥 save_analysis_result: Error occurred: {str(e)}")
         logger.error(f"📚 save_analysis_result: Error traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
+    

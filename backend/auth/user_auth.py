@@ -1,18 +1,32 @@
 from firebase_admin import auth
 import logging
+import os
+import requests
 import traceback
 from datetime import datetime
+from backend.config.firebase_config import get_firebase_config
 
 logger = logging.getLogger(__name__)
 
 class UserAuth:
     def __init__(self, db_ref):
         self.db_ref = db_ref
+        self.firebase_config = get_firebase_config()
+        self.db_url = self.firebase_config.get('databaseURL')
+
+    def _get_authenticated_session(self, id_token):
+        """Creates a requests session authenticated with a Firebase ID token."""
+        session = requests.Session()
+        session.params = {'auth': id_token}
+        return session
 
     def create_user(self, email, password, user_data):
         """Create a new user in Firebase Authentication and store additional data in Realtime Database"""
         try:
             # Create user in Firebase Authentication
+            # This operation requires admin privileges, so it will likely fail without a service account.
+            # For development, user creation should be handled on the client-side.
+            logger.warning("User creation via backend is not recommended without a service account.")
             user = auth.create_user(
                 email=email,
                 password=password,
@@ -21,473 +35,380 @@ class UserAuth:
             
             # Store additional user data in Realtime Database
             user_data['created_at'] = datetime.now().isoformat()
+            # This part will also fail without admin privileges.
             self.db_ref.child('users').child(user.uid).set(user_data)
             
             return user.uid
         except Exception as e:
             logger.error(f"Error creating user: {str(e)}")
+            logger.error("Please create users via the frontend Firebase SDK for development.")
             raise
 
-    def get_user_profile(self, uid):
-        """Get user profile from Realtime Database"""
+    def get_user_profile(self, uid, id_token):
+        """Get user profile from Realtime Database using authenticated REST call."""
         try:
-            user_data = self.db_ref.child('users').child(uid).get()
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/profile.json"
+            response = session.get(url)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            user_data = response.json()
             if not user_data:
-                raise Exception("User not found")
+                # If profile doesn't exist, create a basic one
+                self.ensure_user_profile(uid, id_token, {'email': 'Not set', 'name': 'New User'})
+                return self.get_user_profile(uid, id_token)
             return user_data
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error getting user profile via REST: {e.response.text}")
+            raise
         except Exception as e:
             logger.error(f"Error getting user profile: {str(e)}")
             raise
 
-    def update_user_profile(self, uid, data):
-        """Update user profile in Realtime Database"""
+    def create_user_profile(self, uid, data, id_token):
+        """Create or overwrite a user profile in Realtime Database using authenticated REST call."""
         try:
-            self.db_ref.child('users').child(uid).update(data)
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/profile.json"
+            response = session.put(url, json=data) # Use PUT to create/overwrite
+            response.raise_for_status()
+            logger.info(f"Successfully created/updated profile for user {uid}")
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error creating user profile via REST: {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Error creating user profile: {str(e)}")
+            raise
+
+    def update_user_profile(self, uid, data, id_token):
+        """Update user profile in Realtime Database using authenticated REST call."""
+        try:
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/profile.json"
+            response = session.patch(url, json=data) # Use PATCH to update fields
+            response.raise_for_status()
+            logger.info(f"Successfully updated profile for user {uid}")
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error updating user profile via REST: {e.response.text}")
+            raise
         except Exception as e:
             logger.error(f"Error updating user profile: {str(e)}")
             raise
 
-    def add_vehicle(self, uid, vehicle_data):
-        """Add a vehicle to user's profile"""
+    def add_vehicle(self, uid, vehicle_data, id_token):
+        """Add a vehicle to user's profile using authenticated REST call."""
         try:
-            # Ensure user profile exists
-            self.ensure_user_profile(uid)
-            
-            vehicle_ref = self.db_ref.child('users').child(uid).child('vehicles').push()
+            session = self._get_authenticated_session(id_token)
+            # Ensure user profile exists first
+            self.ensure_user_profile(uid, id_token)
+
+            url = f"{self.db_url}/users/{uid}/vehicles.json"
             vehicle_data['created_at'] = datetime.now().isoformat()
-            vehicle_ref.set(vehicle_data)
             
-            # Update vehicle count in profile
-            try:
-                profile_ref = self.db_ref.child('users').child(uid).child('profile')
-                current_profile = profile_ref.get()
-                if current_profile:
-                    current_count = current_profile.get('total_vehicles', 0)
-                    profile_ref.update({'total_vehicles': current_count + 1})
-            except Exception as e:
-                logger.warning(f"Could not update vehicle count: {str(e)}")
+            response = session.post(url, json=vehicle_data) # POST generates a unique ID
+            response.raise_for_status()
             
-            return vehicle_ref.key
+            new_vehicle_key = response.json().get('name')
+            logger.info(f"Successfully added vehicle {new_vehicle_key} for user {uid}")
+            return new_vehicle_key
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error adding vehicle via REST: {e.response.text}")
+            raise
         except Exception as e:
             logger.error(f"Error adding vehicle: {str(e)}")
             raise
 
-    def get_user_vehicles(self, uid):
-        """Get user's vehicles"""
+    def get_user_vehicles(self, uid, id_token):
+        """Get user's vehicles using authenticated REST call."""
         try:
-            vehicles = self.db_ref.child('users').child(uid).child('vehicles').get()
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/vehicles.json"
+            response = session.get(url)
+            response.raise_for_status()
+            vehicles = response.json()
             return vehicles if vehicles else {}
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error getting user vehicles via REST: {e.response.text}")
+            raise
         except Exception as e:
             logger.error(f"Error getting user vehicles: {str(e)}")
             raise
 
-    def add_insurance(self, uid, insurance_data):
-        """Add insurance information"""
+    def add_insurance(self, uid, insurance_data, id_token):
+        """Add insurance information using authenticated REST call."""
         try:
+            session = self._get_authenticated_session(id_token)
             # Ensure user profile exists
-            self.ensure_user_profile(uid)
+            self.ensure_user_profile(uid, id_token)
             
-            insurance_ref = self.db_ref.child('users').child(uid).child('insurance').push()
+            url = f"{self.db_url}/users/{uid}/insurance.json"
             insurance_data['created_at'] = datetime.now().isoformat()
-            insurance_ref.set(insurance_data)
-            
-            # Update insurance count in profile
-            try:
-                profile_ref = self.db_ref.child('users').child(uid).child('profile')
-                current_profile = profile_ref.get()
-                if current_profile:
-                    current_count = current_profile.get('total_insurance_records', 0)
-                    profile_ref.update({'total_insurance_records': current_count + 1})
-            except Exception as e:
-                logger.warning(f"Could not update insurance count: {str(e)}")
-            
-            return insurance_ref.key
+
+            response = session.post(url, json=insurance_data) # POST generates a unique ID
+            response.raise_for_status()
+
+            new_insurance_key = response.json().get('name')
+            logger.info(f"Successfully added insurance {new_insurance_key} for user {uid}")
+            return new_insurance_key
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error adding insurance via REST: {e.response.text}")
+            raise
         except Exception as e:
             logger.error(f"Error adding insurance: {str(e)}")
             raise
 
-    def get_user_insurance(self, uid):
-        """Get user's insurance information"""
+    def get_user_insurance(self, uid, id_token):
+        """Get user's insurance records using authenticated REST call."""
         try:
-            insurance = self.db_ref.child('users').child(uid).child('insurance').get()
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/insurance.json"
+            response = session.get(url)
+            response.raise_for_status()
+            insurance = response.json()
             return insurance if insurance else {}
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error getting user insurance via REST: {e.response.text}")
+            raise
         except Exception as e:
             logger.error(f"Error getting user insurance: {str(e)}")
             raise
 
-    def add_analysis_history(self, uid, analysis_data):
-        """Add analysis to user's history"""
+    def add_analysis_history(self, uid, analysis_data, id_token):
+        """Save analysis to user's history using authenticated REST call."""
         try:
-            history_ref = self.db_ref.child('users').child(uid).child('analysis_history').push()
+            session = self._get_authenticated_session(id_token)
+            # Ensure user profile exists
+            self.ensure_user_profile(uid, id_token)
+
+            url = f"{self.db_url}/users/{uid}/analysisHistory.json"
             analysis_data['created_at'] = datetime.now().isoformat()
-            history_ref.set(analysis_data)
-            return history_ref.key
+
+            response = session.post(url, json=analysis_data) # POST generates a unique ID
+            response.raise_for_status()
+            
+            new_analysis_key = response.json().get('name')
+            logger.info(f"Successfully saved analysis {new_analysis_key} for user {uid}")
+            return new_analysis_key
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error saving analysis to history via REST: {e.response.text}")
+            raise
         except Exception as e:
-            logger.error(f"Error adding analysis history: {str(e)}")
+            logger.error(f"Error saving analysis to history: {str(e)}")
             raise
 
-    def get_analysis_history(self, uid, auth_token=None):
-        """Get user's analysis history from root level where data currently exists"""
+    def get_analysis_history(self, uid, id_token):
+        """Get user's analysis history using authenticated REST call."""
         try:
-            logger.info(f"🗃️ UserAuth.get_analysis_history: Fetching for uid: {uid}")
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/analysisHistory.json"
+            response = session.get(url)
+            response.raise_for_status()
+            history = response.json()
+            return history if history else {}
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error getting analysis history via REST: {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Error getting analysis history: {str(e)}")
+            raise
+
+    def get_user_stats(self, uid, id_token):
+        """Get user statistics from Realtime Database."""
+        try:
+            history = self.get_analysis_history(uid, id_token)
             
-            # Get all data from root level (where the data actually exists)
-            logger.info("📂 UserAuth.get_analysis_history: Getting data from root level")
-            root_ref = self.db_ref
+            if not history:
+                return {
+                    'totalAnalyses': 0,
+                    'avgConfidence': 0,
+                    'damageTypes': {},
+                    'monthlyTrends': [],
+                    'severityBreakdown': {},
+                    'recentAnalyses': []
+                }
+
+            analyses = []
+            if isinstance(history, dict):
+                for key, value in history.items():
+                    if isinstance(value, dict):
+                        value['id'] = key
+                        analyses.append(value)
             
-            # Generate Firebase ID token for authentication
-            firebase_token = self._generate_firebase_token(uid)
+            # Sort analyses by date to easily find recent ones
+            analyses.sort(
+                key=lambda x: x.get('timestamp', x.get('created_at', '1970-01-01T00:00:00')), 
+                reverse=True
+            )
             
-            # Get root data using the new method
-            if hasattr(root_ref, 'get_root_data'):
-                root_data = root_ref.get_root_data(auth_token=firebase_token)
-            else:
-                # Fallback to regular get
-                root_data = root_ref.get()
+            recent_analyses = analyses[:5]
+            total_analyses = len(analyses)
             
-            logger.info(f"✅ UserAuth.get_analysis_history: Raw root data received")
-            logger.info(f"🔍 UserAuth.get_analysis_history: Root data type: {type(root_data)}")
-            
-            if root_data and isinstance(root_data, dict):
-                # Filter data by userId from root level
-                user_history = {}
-                items_found = 0
-                
-                for key, value in root_data.items():
-                    # Skip the 'users' key if it exists
-                    if key == 'users':
+            # Calculate average confidence
+            confidences = [
+                item.get('result', {}).get('confidence', 0) or item.get('confidence', 0)
+                for item in analyses if (item.get('result', {}).get('confidence') is not None or item.get('confidence') is not None)
+            ]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+
+            # Tally damage types
+            damage_types = {}
+            for item in analyses:
+                damage_type = item.get('result', {}).get('damageType') or item.get('damageType')
+                if damage_type:
+                    damage_types[damage_type] = damage_types.get(damage_type, 0) + 1
+
+            # Find top damage type
+            top_damage_type = max(damage_types, key=damage_types.get) if damage_types else 'N/A'
+
+
+            # Tally severity
+            severity_breakdown = {}
+            for item in analyses:
+                severity = item.get('result', {}).get('severity') or item.get('severity')
+                if severity:
+                    severity_breakdown[severity] = severity_breakdown.get(severity, 0) + 1
+
+            # Calculate monthly trends
+            monthly_trends = {}
+            for item in analyses:
+                try:
+                    # Handle multiple possible timestamp fields
+                    timestamp_str = item.get('uploadedAt') or item.get('created_at') or item.get('timestamp')
+                    if not timestamp_str:
                         continue
                     
-                    # Check if this item belongs to the user
-                    if isinstance(value, dict) and value.get('userId') == uid:
-                        # Transform the data to match expected format
-                        transformed_item = self._transform_legacy_item(key, value)
-                        user_history[key] = transformed_item
-                        items_found += 1
-                
-                logger.info(f"📊 UserAuth.get_analysis_history: Found {items_found} items for user {uid}")
-                
-                if user_history:
-                    # Sort by timestamp if available
-                    try:
-                        sorted_items = sorted(
-                            user_history.items(),
-                            key=lambda x: x[1].get('uploadedAt', x[1].get('created_at', '')),
-                            reverse=True
-                        )
-                        user_history = dict(sorted_items)
-                    except Exception as sort_error:
-                        logger.warning(f"⚠️ Could not sort items: {sort_error}")
+                    # Parse ISO format datetime string
+                    analysis_date = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    month_key = analysis_date.strftime('%Y-%m')
                     
-                    return user_history
-                else:
-                    logger.info("📭 UserAuth.get_analysis_history: No items found for user")
-                    return {}
-            else:
-                logger.info("📭 UserAuth.get_analysis_history: No root data found")
-                return {}
-                
-        except Exception as e:
-            logger.error(f"💥 UserAuth.get_analysis_history: Error occurred: {str(e)}")
-            logger.error(f"📚 UserAuth.get_analysis_history: Error traceback: {traceback.format_exc()}")
-            raise
-    
-    def _generate_firebase_token(self, uid):
-        """Generate Firebase ID token for REST API authentication"""
-        try:
-            import firebase_admin
-            from firebase_admin import auth
-            
-            # Create custom token using Firebase Admin SDK
-            if firebase_admin._apps:
-                custom_token = auth.create_custom_token(uid)
-                # Convert bytes to string if needed
-                if isinstance(custom_token, bytes):
-                    custom_token = custom_token.decode('utf-8')
-                logger.info(f"🔑 Generated Firebase custom token for user {uid}")
-                return custom_token
-            else:
-                logger.warning("⚠️ Firebase Admin SDK not initialized")
-                return None
-                
-        except Exception as e:
-            logger.error(f"❌ Error generating Firebase token: {str(e)}")
-            return None
-    
-    def _transform_legacy_item(self, key, item):
-        """Transform legacy data item to expected format"""
-        try:
-            # Start with the original item
-            transformed = item.copy()
-            
-            # Add id if not present
-            if 'id' not in transformed:
-                transformed['id'] = key
-            
-            # Remove userId since it's now implicit
-            if 'userId' in transformed:
-                del transformed['userId']
-            
-            # Add timestamps if missing
-            if 'uploadedAt' not in transformed:
-                transformed['uploadedAt'] = datetime.now().isoformat()
-            
-            if 'created_at' not in transformed:
-                transformed['created_at'] = transformed.get('uploadedAt', datetime.now().isoformat())
-            
-            # Transform imageUrl to image
-            if 'imageUrl' in transformed:
-                transformed['image'] = transformed.pop('imageUrl')
-            
-            # Create or update result structure
-            result = transformed.get('result', {})
-            
-            # Move recommendations to result if not already there
-            if 'recommendations' in transformed and 'recommendations' not in result:
-                result['recommendations'] = transformed.pop('recommendations')
-            
-            # Move repairEstimate to result if not already there  
-            if 'repairEstimate' in transformed and 'repairEstimate' not in result:
-                result['repairEstimate'] = transformed.pop('repairEstimate')
-            
-            # Add default values for missing fields
-            if 'confidence' not in result:
-                result['confidence'] = 0.85
-            
-            if 'severity' not in result:
-                result['severity'] = 'moderate'
-            
-            if 'identifiedDamageRegions' not in result:
-                # Create damage regions from description if available
-                regions = []
-                if 'description' in transformed:
-                    regions.append({
-                        'damageType': self._extract_damage_type(transformed['description']),
-                        'location': self._extract_location(transformed['description']),
-                        'severity': result['severity'],
-                        'confidence': result['confidence']
-                    })
-                result['identifiedDamageRegions'] = regions
-            
-            transformed['result'] = result
-            
-            return transformed
-            
-        except Exception as e:
-            logger.error(f"❌ Error transforming legacy item {key}: {str(e)}")
-            # Return original item if transformation fails
-            return item
-    
-    def _extract_damage_type(self, description):
-        """Extract damage type from description"""
-        if not description:
-            return 'other'
-        
-        description_lower = description.lower()
-        
-        if 'scratch' in description_lower:
-            return 'scratch'
-        elif 'dent' in description_lower:
-            return 'dent'
-        elif 'paint' in description_lower or 'chip' in description_lower:
-            return 'paint damage'
-        elif 'crack' in description_lower:
-            return 'crack'
-        elif 'rust' in description_lower:
-            return 'rust'
-        else:
-            return 'other'
-    
-    def _extract_location(self, description):
-        """Extract location from description"""
-        if not description:
-            return 'unknown'
-        
-        description_lower = description.lower()
-        
-        if 'hood' in description_lower:
-            return 'hood'
-        elif 'door' in description_lower:
-            return 'door'
-        elif 'bumper' in description_lower:
-            return 'bumper'
-        elif 'fender' in description_lower:
-            return 'fender'
-        elif 'roof' in description_lower:
-            return 'roof'
-        else:
-            return 'unknown'
-    
-    def save_analysis_result(self, uid, analysis_data):
-        """Save analysis result to user's history"""
-        try:
-            logger.info(f"💾 UserAuth.save_analysis_result: Saving analysis for uid: {uid}")
-            
-            # Ensure user profile exists and track activity
-            self.ensure_user_profile(uid)
-            
-            # Add timestamp to analysis data
-            analysis_data['created_at'] = datetime.now().isoformat()
-            analysis_data['user_id'] = uid
-            
-            # Save to user's analysis history
-            history_ref = self.db_ref.child('users').child(uid).child('analysis_history').push()
-            
-            # If it's our REST client, we might need to handle it differently
-            if hasattr(history_ref, 'set'):
-                history_ref.set(analysis_data)
-            else:
-                # For REST client, use the parent reference
-                analysis_id = f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-                self.db_ref.child('users').child(uid).child('analysis_history').child(analysis_id).set(analysis_data)
-                return analysis_id
-            
-            # Update user's last activity
-            self.update_user_activity(uid)
-            
-            logger.info(f"✅ UserAuth.save_analysis_result: Successfully saved analysis")
-            return history_ref.key if hasattr(history_ref, 'key') else analysis_id
-            
-        except Exception as e:
-            logger.error(f"💥 UserAuth.save_analysis_result: Error occurred: {str(e)}")
-            logger.error(f"📚 UserAuth.save_analysis_result: Error traceback: {traceback.format_exc()}")
-            raise
+                    if month_key not in monthly_trends:
+                        monthly_trends[month_key] = {'count': 0, 'totalCost': 0, 'costEntries': 0}
+                    
+                    monthly_trends[month_key]['count'] += 1
+                    
+                    # Extract and parse repair estimate
+                    result = item.get('result', {})
+                    repair_estimate_str = result.get('repairEstimate') or item.get('repairEstimate')
 
-    def ensure_user_profile(self, uid, user_info=None):
-        """Ensure user profile exists in Firebase with proper structure"""
-        try:
-            logger.info(f"👤 UserAuth.ensure_user_profile: Checking profile for uid: {uid}")
-            
-            # Check if user profile exists
-            user_profile = self.db_ref.child('users').child(uid).child('profile').get()
-            
-            if not user_profile:
-                logger.info(f"👤 UserAuth.ensure_user_profile: Creating new profile for uid: {uid}")
-                
-                # Create default profile structure
-                profile_data = {
-                    'uid': uid,
-                    'created_at': datetime.now().isoformat(),
-                    'first_login': datetime.now().isoformat(),
-                    'last_activity': datetime.now().isoformat(),
-                    'total_analyses': 0,
-                    'total_vehicles': 0,
-                    'total_insurance_records': 0,
-                    'is_active': True,
-                    'user_status': 'active',
-                    'platform': 'web',
-                    'features_used': []
+                    cost = 0
+                    if repair_estimate_str:
+                        try:
+                            # Clean string and parse range, e.g., "$1,200 - $2,500" or just "1500"
+                            cleaned_str = repair_estimate_str.replace('$', '').replace(',', '')
+                            parts = cleaned_str.split('-')
+                            if len(parts) == 1:
+                                cost = float(parts[0].strip())
+                            else:
+                                low_estimate = float(parts[0].strip())
+                                high_estimate = float(parts[1].strip())
+                                cost = (low_estimate + high_estimate) / 2
+                        except (ValueError, IndexError) as parse_error:
+                            logger.warning(f"Could not parse repairEstimate: '{repair_estimate_str}', error: {parse_error}")
+                    
+                    if cost > 0:
+                        monthly_trends[month_key]['totalCost'] += cost
+                        monthly_trends[month_key]['costEntries'] += 1
+
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse date for trend analysis: {timestamp_str}, error: {e}")
+
+
+            # Format monthly trends for the frontend
+            formatted_trends = sorted([
+                {
+                    'month': key,
+                    'count': value['count'],
+                    'avgCost': (value['totalCost'] / value['costEntries']) if value['costEntries'] > 0 else 0
                 }
-                
-                # Add any additional user info if provided
-                if user_info:
-                    profile_data.update({
-                        'email': user_info.get('email', ''),
-                        'name': user_info.get('name', ''),
-                        'photo_url': user_info.get('picture', ''),
-                        'provider': user_info.get('provider', 'firebase')
-                    })
-                
-                # Create the profile
-                self.db_ref.child('users').child(uid).child('profile').set(profile_data)
-                
-                # Initialize other user data structures
-                self.db_ref.child('users').child(uid).child('analysis_history').set({})
-                self.db_ref.child('users').child(uid).child('vehicles').set({})
-                self.db_ref.child('users').child(uid).child('insurance').set({})
-                
-                logger.info(f"✅ UserAuth.ensure_user_profile: Created new profile for uid: {uid}")
-                
-            else:
-                logger.info(f"👤 UserAuth.ensure_user_profile: Profile exists for uid: {uid}")
-                
-        except Exception as e:
-            logger.error(f"💥 UserAuth.ensure_user_profile: Error occurred: {str(e)}")
-            logger.error(f"📚 UserAuth.ensure_user_profile: Error traceback: {traceback.format_exc()}")
-            # Don't raise here - profile creation failure shouldn't block other operations
-            
-    def update_user_activity(self, uid):
-        """Update user's last activity timestamp and increment usage counters"""
-        try:
-            logger.info(f"📈 UserAuth.update_user_activity: Updating activity for uid: {uid}")
-            
-            current_time = datetime.now().isoformat()
-            
-            # Update profile activity
-            profile_updates = {
-                'last_activity': current_time,
-                'is_active': True,
-                'user_status': 'active'
+                for key, value in monthly_trends.items()
+            ], key=lambda x: x['month'])
+
+
+            stats = {
+                'totalAnalyses': total_analyses,
+                'avgConfidence': avg_confidence,
+                'damageTypes': damage_types,
+                'monthlyTrends': formatted_trends,
+                'severityBreakdown': severity_breakdown,
+                'recentAnalyses': recent_analyses,
+                'topDamageType': top_damage_type
             }
-            
-            self.db_ref.child('users').child(uid).child('profile').update(profile_updates)
-            
-            # Increment analysis counter
-            profile_ref = self.db_ref.child('users').child(uid).child('profile')
-            current_profile = profile_ref.get()
-            
-            if current_profile:
-                current_count = current_profile.get('total_analyses', 0)
-                profile_ref.update({'total_analyses': current_count + 1})
-            
-            logger.info(f"✅ UserAuth.update_user_activity: Updated activity for uid: {uid}")
-            
-        except Exception as e:
-            logger.error(f"💥 UserAuth.update_user_activity: Error occurred: {str(e)}")
-            # Don't raise here - activity update failure shouldn't block other operations
-            
-    def get_user_stats(self, uid):
-        """Get user statistics and activity data"""
-        try:
-            profile = self.db_ref.child('users').child(uid).child('profile').get()
-            
-            if not profile:
-                return None
-                
-            return {
-                'uid': uid,
-                'created_at': profile.get('created_at'),
-                'last_activity': profile.get('last_activity'),
-                'total_analyses': profile.get('total_analyses', 0),
-                'total_vehicles': profile.get('total_vehicles', 0),
-                'total_insurance_records': profile.get('total_insurance_records', 0),
-                'is_active': profile.get('is_active', False),
-                'user_status': profile.get('user_status', 'unknown'),
-                'features_used': profile.get('features_used', [])
-            }
-            
+
+            return stats
         except Exception as e:
             logger.error(f"Error getting user stats: {str(e)}")
-            return None
-            
-    def get_all_users_stats(self):
-        """Get statistics for all users (admin function)"""
+            logger.error(traceback.format_exc())
+            raise
+
+    def ensure_user_profile(self, uid, id_token, default_profile=None):
+        """Ensure a user profile exists, creating it if necessary, using authenticated REST call."""
         try:
-            all_users = self.db_ref.child('users').get()
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/profile.json"
+            response = session.get(url)
             
-            if not all_users:
-                return []
-                
-            user_stats = []
-            for uid, user_data in all_users.items():
-                profile = user_data.get('profile', {})
-                if profile:
-                    user_stats.append({
-                        'uid': uid,
-                        'created_at': profile.get('created_at'),
-                        'last_activity': profile.get('last_activity'),
-                        'total_analyses': profile.get('total_analyses', 0),
-                        'total_vehicles': profile.get('total_vehicles', 0),
-                        'total_insurance_records': profile.get('total_insurance_records', 0),
-                        'is_active': profile.get('is_active', False),
-                        'user_status': profile.get('user_status', 'unknown'),
-                        'email': profile.get('email', ''),
-                        'name': profile.get('name', ''),
-                        'provider': profile.get('provider', '')
-                    })
+            # Check if profile exists and is not null
+            if response.status_code == 200 and response.content and response.json() is not None:
+                return  # Profile exists
+
+            # Profile does not exist or is null, create it
+            logger.info(f"User profile for {uid} not found, creating one.")
             
-            return user_stats
-            
+            if default_profile is None:
+                profile_data = {
+                    'email': 'unknown@example.com',
+                    'name': 'User',
+                    'created_at': datetime.now().isoformat(),
+                    'last_activity': datetime.now().isoformat()
+                }
+            else:
+                profile_data = default_profile
+                profile_data['created_at'] = datetime.now().isoformat()
+
+            # Use PUT to create the profile at the specific path
+            create_response = session.put(url, json=profile_data)
+            create_response.raise_for_status()
+            logger.info(f"Successfully created profile for user {uid}")
+
+        except requests.exceptions.HTTPError as e:
+            # It's possible for a race condition where another process creates the profile
+            # between our GET and PUT. A 400 error with "data already exists" is fine.
+            if e.response.status_code != 400:
+                 logger.error(f"Error ensuring user profile exists via REST: {e.response.text}")
+                 raise
         except Exception as e:
-            logger.error(f"Error getting all users stats: {str(e)}")
-            return [] 
+            logger.error(f"Error ensuring user profile exists: {str(e)}")
+            raise
+
+    def direct_update_analysis_history(self, uid, data, id_token):
+        """Directly update analysis history for a user (for migration/admin tasks)."""
+        try:
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/analysisHistory.json"
+            response = session.put(url, json=data) # Use PUT to overwrite the whole history
+            response.raise_for_status()
+            logger.info(f"Successfully performed direct update on analysis history for user {uid}")
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error in direct update of analysis history via REST: {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in direct update of analysis history: {str(e)}")
+            raise
+
+    def direct_update_user_data(self, uid, path, data, id_token):
+        """Directly update any part of a user's data (for migration/admin tasks)."""
+        try:
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/{path}.json"
+            response = session.put(url, json=data) # Use PUT to overwrite the data at the path
+            response.raise_for_status()
+            logger.info(f"Successfully performed direct update on {path} for user {uid}")
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error in direct update of {path} via REST: {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in direct update of {path}: {str(e)}")
+            raise

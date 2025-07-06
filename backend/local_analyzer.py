@@ -950,6 +950,7 @@ def create_smart_demo_response(image_path):
         "damageType": damage_info["damage_type"],
         "confidence": damage_info["confidence"],
         "damage_regions": damage_regions,
+        "identifiedDamageRegions": damage_regions,  # Add this for frontend compatibility
         "vehicle_identification": vehicle_info,  # Include full vehicle details
         "insurance_advice": insurance_advice,    # Include vehicle-specific advice
         "description": f"""

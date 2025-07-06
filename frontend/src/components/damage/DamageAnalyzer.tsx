@@ -9,6 +9,7 @@ import { RepairCostCard } from './RepairCostCard';
 import { InsuranceRecommendationsCard } from './InsuranceRecommendationsCard';
 import { VehicleInsuranceAdviceCard } from './VehicleInsuranceAdviceCard';
 import AnalysisVisualization from '../AnalysisVisualization';
+import MultiRegionAnalysisResults from '../analysis/MultiRegionAnalysisResults';
 
 // Import the AI-powered analysis function
 import { analyzeCarDamageWithAI } from '../../utils/api/damageAnalysisApi';
@@ -281,21 +282,12 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
         </Alert>
       )}
       
-      {imageFile && blobUrl && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Image Analysis</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="max-w-full h-auto md:h-96"> 
-              <AnalysisVisualization 
-                imageUrl={blobUrl}
-                damageRegions={identifiedRegions} 
-                showOverlay={true}
-              />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Multi-Region Analysis Results */}
+      {imageFile && blobUrl && analysisResult && (
+        <MultiRegionAnalysisResults 
+          result={analysisResult}
+          imageUrl={blobUrl}
+        />
       )}
 
       <Card>

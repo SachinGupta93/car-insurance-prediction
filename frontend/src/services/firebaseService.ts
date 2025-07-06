@@ -125,7 +125,7 @@ class FirebaseDataService {
     }
 
     const userId = this.getCurrentUserId()!;
-    const historyRef = ref(rtdb, `users/${userId}/analysis_history`);
+    const historyRef = ref(rtdb, `users/${userId}/analysisHistory`);
     const newAnalysisRef = push(historyRef);
     
     
@@ -182,7 +182,7 @@ class FirebaseDataService {
     
     console.log('👤 FirebaseService: Using user ID:', uid);
 
-    const historyRef = ref(rtdb, `users/${uid}/analysis_history`);
+    const historyRef = ref(rtdb, `users/${uid}/analysisHistory`);
     const snapshot = await get(historyRef);
     
     if (snapshot.exists()) {
@@ -207,10 +207,10 @@ class FirebaseDataService {
             damageType: item.damageType || 'Structural Damage',
             confidence: item.confidence || 0.75,
             severity: item.severity || 'moderate',
-            description: item.result?.description || 'Analysis completed successfully',
-            damageDescription: item.result?.damageDescription || 'Damage detected and analyzed',
-            recommendations: item.result?.recommendations || ['Professional assessment recommended'],
-            identifiedDamageRegions: item.result?.identifiedDamageRegions || []
+            description: 'Analysis completed successfully',
+            damageDescription: 'Damage detected and analyzed',
+            recommendations: ['Professional assessment recommended'],
+            identifiedDamageRegions: []
           }
         };
         return processedItem;
@@ -235,7 +235,7 @@ class FirebaseDataService {
     }
 
     const userId = this.getCurrentUserId()!;
-    const analysisRef = ref(rtdb, `users/${userId}/analysis_history/${analysisId}`);
+    const analysisRef = ref(rtdb, `users/${userId}/analysisHistory/${analysisId}`);
     await remove(analysisRef);
   }
 
@@ -245,7 +245,7 @@ class FirebaseDataService {
     }
 
     const userId = this.getCurrentUserId()!;
-    const historyRef = ref(rtdb, `users/${userId}/analysis_history`);
+    const historyRef = ref(rtdb, `users/${userId}/analysisHistory`);
     await remove(historyRef);
   }
 

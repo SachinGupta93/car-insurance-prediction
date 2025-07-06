@@ -677,7 +677,12 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
                 json_patterns = [
                     r'{\s*"identifiedDamageRegions"\s*:\s*\[(.*?)\]\s*}',
                     r'"identifiedDamageRegions"\s*:\s*\[(.*?)\]',
-                    r'identifiedDamageRegions.*?\[(.*?)\]'
+                    r'identifiedDamageRegions.*?\[(.*?)\]',
+                    r'"identifiedDamageRegions":\s*\[(.*?)\]',
+                    # More flexible patterns for various formats
+                    r'identifiedDamageRegions.*?:\s*\[(.*?)\]',
+                    r'damage.*?regions.*?\[(.*?)\]',
+                    r'\[\s*\{.*?"damageType".*?\}\s*\]'
                 ]
                 
                 for pattern in json_patterns:
@@ -685,18 +690,49 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
                     if match:
                         try:
                             # Try to parse the complete JSON structure
-                            full_json = f'{{"identifiedDamageRegions": [{match.group(1)}]}}'
-                            damage_info = json.loads(full_json)
-                            damage_regions = damage_info.get('identifiedDamageRegions', [])
+                            if pattern == r'\[\s*\{.*?"damageType".*?\}\s*\]':
+                                # Direct array match
+                                damage_regions = json.loads(match.group(0))
+                            else:
+                                # Wrapped in identifiedDamageRegions
+                                full_json = f'{{"identifiedDamageRegions": [{match.group(1)}]}}'
+                                damage_info = json.loads(full_json)
+                                damage_regions = damage_info.get('identifiedDamageRegions', [])
                             
-                            if damage_regions:
-                                logger.info(f"[GEMINI] Successfully parsed {len(damage_regions)} damage regions")
-                                break
+                            if damage_regions and isinstance(damage_regions, list):
+                                # Validate and clean up damage regions
+                                valid_regions = []
+                                for region in damage_regions:
+                                    if isinstance(region, dict) and 'damageType' in region:
+                                        # Ensure required fields exist with defaults
+                                        cleaned_region = {
+                                            'x': float(region.get('x', 20)),
+                                            'y': float(region.get('y', 20)),
+                                            'width': float(region.get('width', 30)),
+                                            'height': float(region.get('height', 20)),
+                                            'damageType': region.get('damageType', 'Unknown Damage'),
+                                            'severity': region.get('severity', 'Medium'),
+                                            'confidence': float(region.get('confidence', 0.7)),
+                                            'description': region.get('description', f"{region.get('damageType', 'Damage')} detected"),
+                                            'affectedComponents': region.get('affectedComponents', ['Unknown']),
+                                            'repairMethod': region.get('repairMethod', 'Professional assessment required'),
+                                            'laborHours': int(region.get('laborHours', 2)),
+                                            'partsRequired': region.get('partsRequired', ['Assessment needed'])
+                                        }
+                                        valid_regions.append(cleaned_region)
+                                
+                                if valid_regions:
+                                    damage_regions = valid_regions
+                                    logger.info(f"[GEMINI] Successfully parsed and cleaned {len(damage_regions)} damage regions")
+                                    break
                         except json.JSONDecodeError as parse_error:
                             logger.warning(f"[GEMINI] JSON parse error with pattern: {str(parse_error)}")
                             continue
+                        except Exception as region_error:
+                            logger.warning(f"[GEMINI] Error processing regions: {str(region_error)}")
+                            continue
                 
-                # If no JSON found, try to extract individual damage descriptions
+                # If no JSON found, try to extract individual damage descriptions and create regions
                 if not damage_regions:
                     logger.debug("[GEMINI] No JSON format found, trying to extract damage info from text")
                     
@@ -704,31 +740,48 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
                     damage_keywords = [
                         'scratch', 'scratches', 'dent', 'dents', 'crack', 'cracks',
                         'damage', 'damaged', 'broken', 'bent', 'paint damage',
-                        'collision', 'impact', 'wear', 'rust', 'corrosion'
+                        'collision', 'impact', 'wear', 'rust', 'corrosion',
+                        'panel damage', 'bumper damage', 'door damage'
                     ]
                     
-                    damage_found = any(keyword.lower() in analysis_text.lower() for keyword in damage_keywords)
+                    found_damages = []
+                    for keyword in damage_keywords:
+                        if keyword.lower() in analysis_text.lower():
+                            found_damages.append(keyword)
                     
-                    if damage_found and "no damage" not in analysis_text.lower():
-                        # Create a generic damage region if damage is mentioned but no coordinates
-                        damage_regions = [{
-                            "x": 50,
-                            "y": 50,
-                            "width": 30,
-                            "height": 20,
-                            "damageType": "Detected Damage",
-                            "severity": "Unknown",
-                            "confidence": 0.6,
-                            "description": "Damage detected in analysis but coordinates not specified"
-                        }]
-                        logger.info("[GEMINI] Created generic damage region based on text analysis")
+                    if found_damages and "no damage" not in analysis_text.lower():
+                        # Create regions based on found damage types
+                        for i, damage_type in enumerate(found_damages[:3]):  # Limit to 3 regions
+                            # Position regions in different areas
+                            positions = [
+                                {'x': 25, 'y': 30, 'width': 25, 'height': 20},  # Front area
+                                {'x': 60, 'y': 40, 'width': 20, 'height': 25},  # Side area
+                                {'x': 40, 'y': 65, 'width': 30, 'height': 15}   # Rear area
+                            ]
+                            
+                            position = positions[i] if i < len(positions) else positions[0]
+                            
+                            damage_regions.append({
+                                **position,
+                                "damageType": damage_type.title(),
+                                "severity": "Medium",
+                                "confidence": 0.7,
+                                "description": f"{damage_type.title()} detected in vehicle analysis",
+                                "affectedComponents": ["Vehicle Panel"],
+                                "repairMethod": "Professional assessment required",
+                                "laborHours": 2,
+                                "partsRequired": ["Assessment needed"]
+                            })
+                        
+                        logger.info(f"[GEMINI] Created {len(damage_regions)} damage regions from text analysis")
                 
                 # Extract confidence score with multiple patterns
                 confidence_patterns = [
                     r'Confidence:\s*(\d+(?:\.\d+)?)%?',
                     r'confidence[:\s]*(\d+(?:\.\d+)?)%?',
                     r'(\d+(?:\.\d+)?)%\s*confidence',
-                    r'CLAIM_RECOMMENDED.*?(\d+(?:\.\d+)?)%'
+                    r'CLAIM_RECOMMENDED.*?(\d+(?:\.\d+)?)%',
+                    r'Identification Confidence:\s*(\d+(?:\.\d+)?)%?'
                 ]
                 
                 for pattern in confidence_patterns:

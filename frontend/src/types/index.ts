@@ -67,12 +67,19 @@ export interface RegionalInsuranceInsights {
 
 // Damage Region Interface for Visualization
 export interface DamageRegion {
-  x: number; // x-coordinate as percentage of image width
-  y: number; // y-coordinate as percentage of image height
-  width: number; // width as percentage of image width
-  height: number; // height as percentage of image height
-  damageType: string;
-  confidence: number;
+  id: string; // Unique identifier for the damage region
+  x: number; // x-coordinate as percentage of image width (0-100)
+  y: number; // y-coordinate as percentage of image height (0-100)
+  width: number; // width as percentage of image width (0-100)
+  height: number; // height as percentage of image height (0-100)
+  damageType: string; // Type of damage (scratch, dent, crack, rust, etc.)
+  severity: 'minor' | 'moderate' | 'severe' | 'critical'; // Severity level
+  confidence: number; // AI confidence (0-1)
+  damagePercentage: number; // Percentage of damage in this region (0-100)
+  description: string; // Detailed description of the damage
+  partName?: string; // Car part name (bumper, door, hood, etc.)
+  estimatedCost?: number; // Estimated repair cost for this region
+  color?: string; // Color for marking this region on the image
 }
 
 // Enhanced Damage Result with Indian Market Features
@@ -112,6 +119,13 @@ export interface DamageResult {
     recommendations: string[];
   };
   identifiedDamageRegions?: DamageRegion[]; // Added for visualizing specific damage areas
+  regionAnalysis?: {
+    totalRegions: number;
+    severityDistribution: Record<string, number>;
+    damageTypeDistribution: Record<string, number>;
+    totalEstimatedCost: number;
+    averageConfidence: number;
+  };
   
   // Demo mode fields
   isDemoMode?: boolean;
@@ -152,6 +166,9 @@ export interface HistoricalAnalysis {
   analysisDate?: string; // Alias for timestamp for compatibility
   confidence?: number; // Confidence score from result
   damageType?: string; // Top-level damage type for compatibility
+  repairEstimate?: string; // Repair cost estimate for compatibility
+  description?: string; // Description for compatibility
+  recommendations?: string[]; // Recommendations for compatibility
 }
 
 // This will be the type used in the Dashboard

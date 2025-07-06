@@ -3,11 +3,10 @@
  */
 import { UploadedImage, DamageResult } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5174/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 // Development mode configuration
 const DEV_MODE = import.meta.env.DEV || import.meta.env.VITE_DEV_MODE === 'true';
-const BYPASS_AUTH_IN_DEV = import.meta.env.VITE_BYPASS_AUTH_IN_DEV === 'true';
 
 interface ApiResponse<T> {
   data: T;
@@ -17,56 +16,42 @@ interface ApiResponse<T> {
 
 class UnifiedApiService {
   private async getAuthHeaders(): Promise<HeadersInit> {
-    console.log('🔑 [UnifiedAPI] Getting auth headers...', {
-      DEV_MODE,
-      BYPASS_AUTH_IN_DEV,
-      API_BASE_URL
-    });
+    console.log('🔑 [UnifiedAPI] Getting auth headers...');
     
     try {
-      // In development mode, always use bypass header if configured
-      if (DEV_MODE && BYPASS_AUTH_IN_DEV) {
-        console.log('🔧 [UnifiedAPI] Development mode: Using auth bypass header');
-        return {
-          'Content-Type': 'application/json',
-          'X-Dev-Auth-Bypass': 'true'
-        };
+      const { auth } = await import('@/lib/firebase');
+      const user = auth.currentUser;
+
+      if (!user) {
+        console.error('❌ [UnifiedAPI] User not authenticated.');
+        // If no user, we cannot make authenticated requests.
+        // Depending on the app's public/private routes, you might want to
+        // redirect to login here or let the request fail.
+        throw new Error('User not authenticated');
       }
 
-      // Try to get Firebase token from localStorage first
-      let token = localStorage.getItem('firebaseIdToken');
-      
-      // If no token in localStorage, try to get it from Firebase auth
+      const token = await user.getIdToken(); // Allow cached token
+
       if (!token) {
-        const { auth } = await import('@/lib/firebase');
-        const user = auth.currentUser;
-        
-        if (user) {
-          token = await user.getIdToken(true);
-          if (token) {
-            localStorage.setItem('firebaseIdToken', token);
-          }
-        }
+        console.error('❌ [UnifiedAPI] Could not retrieve Firebase ID token.');
+        throw new Error('Could not retrieve Firebase ID token');
       }
+      
+      // Store the fresh token in localStorage for other parts of the app if needed
+      localStorage.setItem('firebaseIdToken', token);
 
       const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      } else {
-        console.log('🔧 [UnifiedAPI] No token available, using dev bypass header');
-        headers['X-Dev-Auth-Bypass'] = 'true';
-      }
-
-      return headers;
-    } catch (error) {
-      console.error('Error getting auth headers:', error);
-      return {
         'Content-Type': 'application/json',
-        'X-Dev-Auth-Bypass': 'true'
+        'Authorization': `Bearer ${token}`
       };
+
+      console.log('✅ [UnifiedAPI] Auth headers created successfully.');
+      return headers;
+
+    } catch (error) {
+      console.error('💥 [UnifiedAPI] Error getting auth headers:', error);
+      // Re-throw the error to be caught by the calling function
+      throw error;
     }
   }
 
@@ -97,19 +82,32 @@ class UnifiedApiService {
       const formHeaders = { ...authHeaders };
       delete (formHeaders as any)['Content-Type']; // Remove Content-Type for FormData
       
+      // Add timeout for faster failure
+      const timeoutId = setTimeout(() => {
+        throw new Error('Request timeout - API taking too long');
+      }, 15000); // 15 second timeout
+
       const response = await fetch(`${API_BASE_URL}/analyze-damage`, {
         method: 'POST',
         headers: formHeaders,
         body: formData
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Network error' }));
         
-        // Check if this is a quota exceeded error (429)
+        // Check if this is a quota exceeded error (429) with demo data
         if (response.status === 429 || errorData.quota_exceeded) {
+          // If the backend provided demo data with the error, use it
+          if (errorData.data && errorData.data.structured_data) {
+            console.log('📊 [UnifiedAPI] Using demo data from quota exceeded response');
+            return errorData.data.structured_data;
+          }
+          
+          // Otherwise, throw the quota error for upstream handling
           const quotaError = new Error(errorData.error || 'Quota exceeded');
-          // Add quota-specific properties to help upstream handlers
           (quotaError as any).isQuotaExceeded = true;
           (quotaError as any).retryDelaySeconds = errorData.retry_delay_seconds || 60;
           throw quotaError;
@@ -122,7 +120,17 @@ class UnifiedApiService {
       
       // Transform backend response to DamageResult format
       if (data.data && data.data.structured_data) {
-        return data.data.structured_data;
+        const result = data.data.structured_data;
+        
+        // Add demo mode flags if present
+        if (data.demo_mode) {
+          result.isDemoMode = true;
+          result.quotaExceeded = data.quota_exceeded;
+          result.retryDelaySeconds = data.retry_delay_seconds;
+        }
+        
+        console.log('✅ [UnifiedAPI] Returning structured data:', result);
+        return result;
       }
       
       throw new Error('Invalid response format from backend');
@@ -212,6 +220,34 @@ class UnifiedApiService {
       return data.data || data;
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add analysis to history
+   */
+  async addAnalysisToHistory(analysisData: any): Promise<string> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/user/history/add`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(analysisData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.id || data.data?.id || 'unknown';
+    } catch (error) {
+      console.error('Error adding analysis to history:', error);
       throw error;
     }
   }

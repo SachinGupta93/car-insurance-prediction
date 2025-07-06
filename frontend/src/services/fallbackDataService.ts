@@ -2,6 +2,7 @@
  * Fallback Data Service - Provides sample data when backend is not available
  */
 import { UploadedImage } from '@/types';
+import { BarChart2, AlertCircle, LayoutDashboard, History } from 'lucide-react';
 
 export class FallbackDataService {
   /**
@@ -64,15 +65,30 @@ export class FallbackDataService {
           },
           identifiedDamageRegions: [
             {
+              id: `region_${i}_1`,
               x: 10 + Math.random() * 40, // random x position
               y: 10 + Math.random() * 40, // random y position
               width: 20 + Math.random() * 20, // random width
               height: 20 + Math.random() * 20, // random height
               damageType,
-              confidence
+              severity: 'moderate' as const,
+              confidence,
+              damagePercentage: Math.floor(Math.random() * 40) + 30,
+              description: `${damageType} damage detected with ${Math.floor(confidence * 100)}% confidence`,
+              partName: 'front_bumper',
+              estimatedCost: Math.floor(Math.random() * 20000) + 5000,
+              color: '#FF9800'
             }
           ],
           enhancedRepairCost: {
+            conservative: {
+              rupees: `₹${Math.floor(repairCost * 0.8).toLocaleString()}`,
+              dollars: `$${Math.floor(repairCost * 0.8 / 80)}`
+            },
+            comprehensive: {
+              rupees: `₹${Math.floor(repairCost * 1.2).toLocaleString()}`,
+              dollars: `$${Math.floor(repairCost * 1.2 / 80)}`
+            },
             laborHours: `${8 + Math.floor(Math.random() * 8)} hours`,
             breakdown: {
               parts: {
@@ -86,30 +102,20 @@ export class FallbackDataService {
             },
             serviceTypeComparison: {
               authorizedCenter: {
-                rupees: `₹${repairCost.toLocaleString()}`,
-                dollars: `$${Math.floor(repairCost / 80)}`
+                rupees: `₹${Math.floor(repairCost * 1.3).toLocaleString()}`,
+                dollars: `$${Math.floor(repairCost * 1.3 / 80)}`
               },
               multiBrandCenter: {
-                rupees: `₹${Math.floor(repairCost * 0.8).toLocaleString()}`,
-                dollars: `$${Math.floor(repairCost * 0.8 / 80)}`
+                rupees: `₹${Math.floor(repairCost * 1.0).toLocaleString()}`,
+                dollars: `$${Math.floor(repairCost * 1.0 / 80)}`
               },
               localGarage: {
-                rupees: `₹${Math.floor(repairCost * 0.6).toLocaleString()}`,
-                dollars: `$${Math.floor(repairCost * 0.6 / 80)}`
+                rupees: `₹${Math.floor(repairCost * 0.7).toLocaleString()}`,
+                dollars: `$${Math.floor(repairCost * 0.7 / 80)}`
               }
-            },
-            conservative: {
-              rupees: `₹${repairCost.toLocaleString()}`,
-              dollars: `$${Math.floor(repairCost / 80)}`
-            },
-            comprehensive: {
-              rupees: `₹${(repairCost + 5000).toLocaleString()}`,
-              dollars: `$${Math.floor((repairCost + 5000) / 80)}`
             }
           }
         },
-        severity,
-        confidence
       });
     }
     
@@ -117,66 +123,69 @@ export class FallbackDataService {
   }
   
   /**
-   * Generate sample analytics data
+   * Generate sample analytics data based on sample history
    */
   static generateSampleAnalytics() {
-    const sampleHistory = this.generateSampleHistory();
+    const history = this.generateSampleHistory();
+    const totalAnalyses = history.length;
     
-    // Calculate analytics from sample data
-    const totalAnalyses = sampleHistory.length;
-    const avgConfidence = sampleHistory.reduce((sum, item) => sum + (item.confidence || 0), 0) / totalAnalyses;
-    
-    // Count damage types
+    const confidences = history.map(item => item.result?.confidence || 0);
+    const avgConfidence = confidences.reduce((a, b) => a + b, 0) / (confidences.length || 1);
+
     const damageTypes: Record<string, number> = {};
-    sampleHistory.forEach(item => {
-      const damageType = (item as any).damageType || item.result?.damageType || 'Unknown';
-      damageTypes[damageType] = (damageTypes[damageType] || 0) + 1;
+    history.forEach(item => {
+      const type = item.result?.damageType || 'Unknown';
+      damageTypes[type] = (damageTypes[type] || 0) + 1;
     });
-    
-    // Generate monthly trends
-    const monthlyTrends = [
-      { month: 'Jan', count: 12, avgCost: 25000 },
-      { month: 'Feb', count: 18, avgCost: 28000 },
-      { month: 'Mar', count: 24, avgCost: 22000 },
-      { month: 'Apr', count: 15, avgCost: 32000 },
-      { month: 'May', count: 21, avgCost: 26000 },
-      { month: 'Jun', count: 19, avgCost: 30000 }
-    ];
-    
-    // Count severity breakdown
-    const severityBreakdown: Record<string, number> = {
-      minor: 0,
-      moderate: 0,
-      severe: 0,
-      critical: 0
-    };
-    
-    sampleHistory.forEach(item => {
-      if (item.severity) {
-        severityBreakdown[item.severity] = (severityBreakdown[item.severity] || 0) + 1;
+
+    const topDamageType = Object.keys(damageTypes).reduce((a, b) => damageTypes[a] > damageTypes[b] ? a : b, 'N/A');
+
+    const monthlyTrends: Array<{ month: string; count: number; avgCost: number }> = [];
+    const trendsMap: Record<string, { count: number; totalCost: number }> = {};
+    history.forEach(item => {
+      const month = new Date(item.timestamp || 0).toISOString().slice(0, 7);
+      if (!trendsMap[month]) {
+        trendsMap[month] = { count: 0, totalCost: 0 };
       }
+      trendsMap[month].count++;
+      const cost = parseInt(item.result?.repairEstimate?.replace(/[^0-9]/g, '') || '0', 10);
+      trendsMap[month].totalCost += cost;
     });
-    
+
+    for (const [month, data] of Object.entries(trendsMap)) {
+      monthlyTrends.push({
+        month,
+        count: data.count,
+        avgCost: data.totalCost / data.count,
+      });
+    }
+
     return {
       totalAnalyses,
       avgConfidence,
       damageTypes,
       monthlyTrends,
-      severityBreakdown
+      severityBreakdown: { 'minor': 2, 'moderate': 4, 'severe': 2 },
+      recentAnalyses: history.slice(0, 5),
+      topDamageType,
     };
   }
-  
+
   /**
-   * Generate sample insurance data
+   * Generate sample stats for the dashboard overview
+   * @param analytics - Sample analytics data
    */
-  static generateSampleInsuranceData() {
+  static generateSampleStats(analytics: ReturnType<typeof this.generateSampleAnalytics>) {
+    const { totalAnalyses, avgConfidence, monthlyTrends, topDamageType } = analytics;
+
+    const thisMonthKey = new Date().toISOString().slice(0, 7);
+    const analysesThisMonth = monthlyTrends.find(t => t.month === thisMonthKey)?.count || 0;
+
     return [
-      { month: 'Jan', claims: 45, averageCost: 25000, settlements: 42 },
-      { month: 'Feb', claims: 52, averageCost: 28000, settlements: 48 },
-      { month: 'Mar', claims: 38, averageCost: 22000, settlements: 35 },
-      { month: 'Apr', claims: 61, averageCost: 32000, settlements: 58 },
-      { month: 'May', claims: 47, averageCost: 26000, settlements: 44 },
-      { month: 'Jun', claims: 54, averageCost: 30000, settlements: 51 }
+      { id: 1, value: totalAnalyses.toLocaleString(), label: 'Total Analyses', icon: BarChart2 },
+      { id: 2, value: `${(avgConfidence * 100).toFixed(1)}%`, label: 'Avg. Confidence', icon: AlertCircle },
+      { id: 3, value: topDamageType, label: 'Top Damage Type', icon: LayoutDashboard },
+      { id: 4, value: analysesThisMonth.toLocaleString(), label: 'Analyses This Month', icon: History },
     ];
   }
 }

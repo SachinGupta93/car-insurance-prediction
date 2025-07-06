@@ -6,13 +6,14 @@ import Login from './components/auth/Login';
 import SignUp from './components/auth/SignUp';
 import Dashboard from './components/dashboard/Dashboard';
 import HistoryPage from './components/HistoryPage';
-import ResourcesPage from './components/resources/ResourcesPage';
-import InsuranceAnalysis from './components/insurance/InsuranceAnalysis';
+import InsurancePage from './components/InsurancePage';
 import IntegrationTestPage from './components/IntegrationTestPage';
 import ProfileFixPage from './components/ProfileFixPage';
 import Auth from './components/Auth';
 import ErrorBoundary from './components/common/EnhancedErrorBoundary';
+import CacheStatus from './components/common/CacheStatus';
 import APIKeyStatusPanel from './components/APIKeyStatusPanel';
+import ApiConnectionTest from './components/debug/ApiConnectionTest';
 import { NotificationProvider } from './context/NotificationContext';
 import { useFirebaseAuth } from './context/FirebaseAuthContext';
 import './App.css';
@@ -60,7 +61,13 @@ function App() {
             </div>
 
             {/* API Key Status Panel (Development Only) */}
-            <APIKeyStatusPanel />            {/* Professional Main Content Container */}
+            <APIKeyStatusPanel />
+            
+            {/* API Connection Test (Development Only) */}
+            <ApiConnectionTest />
+            
+            {/* Cache Status (Development Only) */}
+            <CacheStatus />            {/* Professional Main Content Container */}
             <main className="flex-1 relative z-30">
               <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 bg-white/90 backdrop-blur-lg shadow-lg rounded-lg my-6 border border-gray-200 transform transition-all duration-300 hover:shadow-xl hover:scale-[1.01]">
                 <Routes>
@@ -94,22 +101,6 @@ function App() {
                         </div>
                       </Auth>
                     }
-                  />
-                  <Route 
-                    path="/resources" 
-                    element={
-                      <div className="animate-slideInFromRight">
-                        <ResourcesPage />
-                      </div>
-                    } 
-                  />
-                  <Route 
-                    path="/profile-fix" 
-                    element={
-                      <div className="animate-fadeInUp">
-                        <ProfileFixPage />
-                      </div>
-                    } 
                   />
 
                   {/* Protected Routes with Staggered Animations */}
@@ -152,18 +143,29 @@ function App() {
                         </div>
                       </ProtectedRoute>
                     }
-                  />                  <Route
+                  />
+                  <Route
                     path="/insurance"
                     element={
                       <ProtectedRoute>
                         <div className="animate-zoomIn">
-                          <InsuranceAnalysis />
+                          <InsurancePage />
                         </div>
                       </ProtectedRoute>
                     }
                   />
                   <Route
-                    path="/test"
+                    path="/profile-fix"
+                    element={
+                      <ProtectedRoute>
+                        <div className="animate-fadeInUp">
+                          <ProfileFixPage />
+                        </div>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/integration-test"
                     element={
                       <ProtectedRoute>
                         <div className="animate-fadeInUp">

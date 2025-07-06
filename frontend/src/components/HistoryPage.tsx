@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ImageHistory from './ImageHistory';
 import { useHistory, AnalysisHistoryItem } from '@/context/HistoryContext';
+import { useDataCache } from '@/context/DataCacheContext';
 import { FallbackDataService } from '@/services/fallbackDataService';
 
 type FilterType = 'all' | 'recent' | 'dent' | 'scratch' | 'glass' | 'severe';
@@ -9,6 +10,7 @@ const HistoryPage: React.FC = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const { history } = useHistory();
+  const { getAnalysisHistory, isLoading } = useDataCache();
   const [displayHistory, setDisplayHistory] = useState<AnalysisHistoryItem[]>([]);
 
   console.log('📚 HistoryPage: Rendering with data:', {
@@ -18,30 +20,60 @@ const HistoryPage: React.FC = () => {
     sampleHistory: history.slice(0, 2)
   });
 
-  // Use fallback data if no history is available
+  // Load analysis history with caching
   useEffect(() => {
-    if (history.length === 0) {
-      console.log('📭 HistoryPage: No history available, using fallback data...');
-      const fallbackHistory = FallbackDataService.generateSampleHistory();
-      console.log('✅ HistoryPage: Fallback history loaded:', fallbackHistory.length + ' items');
-      // Transform UploadedImage[] to AnalysisHistoryItem[]
-      const transformedHistory = fallbackHistory.map(item => ({
-        ...item,
-        userId: item.userId || 'unknown', // Ensure userId is always a string
-        imageUrl: item.image,
-        analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(), // Ensure analysisDate is always a string
-        damageDescription: item.result?.description || 'No description available',
-        damageType: (item as any).damageType || item.result?.damageType || 'Unknown',
-        description: item.result?.description || 'No description available',
-        recommendations: ['Check with insurance provider', 'Get repair estimate', 'Schedule repair'],
-        confidence: item.confidence || item.result?.confidence || 0 // Ensure confidence is always a number
-      }));
-      setDisplayHistory(transformedHistory);
-    } else {
-      console.log('📚 HistoryPage: Using real history data:', history.length + ' items');
-      setDisplayHistory(history);
-    }
-  }, [history]);
+    const loadHistory = async () => {
+      try {
+        const cachedHistory = await getAnalysisHistory();
+        if (cachedHistory.length > 0) {
+          console.log('📚 HistoryPage: Using cached history data:', cachedHistory.length + ' items');
+          setDisplayHistory(cachedHistory);
+        } else if (history.length > 0) {
+          console.log('📚 HistoryPage: Using context history data:', history.length + ' items');
+          setDisplayHistory(history);
+        } else {
+          console.log('📭 HistoryPage: No history available, using fallback data...');
+          const fallbackHistory = FallbackDataService.generateSampleHistory();
+          console.log('✅ HistoryPage: Fallback history loaded:', fallbackHistory.length + ' items');
+          // Transform UploadedImage[] to AnalysisHistoryItem[]
+          const transformedHistory = fallbackHistory.map(item => ({
+            ...item,
+            userId: item.userId || 'unknown', // Ensure userId is always a string
+            imageUrl: item.image,
+            analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(), // Ensure analysisDate is always a string
+            damageDescription: item.result?.description || 'No description available',
+            damageType: (item as any).damageType || item.result?.damageType || 'Unknown',
+            description: item.result?.description || 'No description available',
+            recommendations: ['Check with insurance provider', 'Get repair estimate', 'Schedule repair'],
+            confidence: item.confidence || item.result?.confidence || 0 // Ensure confidence is always a number
+          }));
+          setDisplayHistory(transformedHistory);
+        }
+      } catch (error) {
+        console.error('Error loading history:', error);
+        // Fallback to existing history or sample data
+        if (history.length > 0) {
+          setDisplayHistory(history);
+        } else {
+          const fallbackHistory = FallbackDataService.generateSampleHistory();
+          const transformedHistory = fallbackHistory.map(item => ({
+            ...item,
+            userId: item.userId || 'unknown',
+            imageUrl: item.image,
+            analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(),
+            damageDescription: item.result?.description || 'No description available',
+            damageType: (item as any).damageType || item.result?.damageType || 'Unknown',
+            description: item.result?.description || 'No description available',
+            recommendations: ['Check with insurance provider', 'Get repair estimate', 'Schedule repair'],
+            confidence: item.confidence || item.result?.confidence || 0
+          }));
+          setDisplayHistory(transformedHistory);
+        }
+      }
+    };
+
+    loadHistory();
+  }, [history, getAnalysisHistory]);
 
   // Filter history based on current filter and search term
   const filteredHistory = displayHistory.filter((item: AnalysisHistoryItem) => {

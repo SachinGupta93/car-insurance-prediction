@@ -260,67 +260,41 @@ export default function AnalysisChart({
   );
 
   const renderInsuranceTrends = () => (
-    <ResponsiveContainer width="100%" height={350}>
-      <LineChart 
-        data={chartData as InsuranceData[]}
-        margin={{ top: 20, right: 30, left: 20, bottom: 30 }}
-      >
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
         <defs>
           <linearGradient id="colorClaims" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={COLORS.chart1} stopOpacity={0.8}/>
             <stop offset="95%" stopColor={COLORS.chart1} stopOpacity={0.1}/>
           </linearGradient>
-          <linearGradient id="colorSettlements" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={COLORS.chart2} stopOpacity={0.8}/>
             <stop offset="95%" stopColor={COLORS.chart2} stopOpacity={0.1}/>
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
-        <XAxis 
-          dataKey="month" 
-          tick={{ fontSize: 12, fill: COLORS.text }}
-          axisLine={{ stroke: COLORS.grid }}
-          tickLine={{ stroke: COLORS.grid }}
-        />
-        <YAxis 
-          tick={{ fontSize: 12, fill: COLORS.text }}
-          axisLine={{ stroke: COLORS.grid }}
-          tickLine={{ stroke: COLORS.grid }}
-          label={{ value: 'Count', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: COLORS.text } }}
-        />
+        <XAxis dataKey="month" tick={{ fontSize: 12, fill: COLORS.text }} />
+        <YAxis yAxisId="left" tick={{ fontSize: 12, fill: COLORS.text }} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: COLORS.text }} tickFormatter={formatCurrency} />
         <Tooltip 
-          contentStyle={{
-            backgroundColor: COLORS.background,
-            border: `1px solid ${COLORS.tooltipBorder}`,
-            borderRadius: '8px',
-            color: COLORS.text,
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+          contentStyle={{ 
+            backgroundColor: COLORS.background, 
+            borderColor: COLORS.tooltipBorder, 
+            borderRadius: '0.5rem',
+            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' // shadow-lg
           }}
-          formatter={(value: number, name: string) => [
-            value.toLocaleString(),
-            name === 'claims' ? 'Claims' : name === 'settlements' ? 'Settlements' : name
-          ]}
+          labelStyle={{ fontWeight: 'bold', color: COLORS.text }}
+          formatter={(value: number, name: string) => {
+            if (name === 'Average Cost') {
+              return formatCurrency(value);
+            }
+            return value;
+          }}
         />
-        <Legend wrapperStyle={{ paddingTop: '20px' }} />
-        <Line 
-          type="monotone" 
-          dataKey="claims" 
-          stroke={COLORS.chart1} 
-          strokeWidth={2}
-          name="Claims" 
-          dot={{ r: 4, strokeWidth: 2, fill: COLORS.background }}
-          activeDot={{ r: 6, strokeWidth: 0, fill: COLORS.chart1 }}
-        />
-        <Line 
-          type="monotone" 
-          dataKey="settlements" 
-          stroke={COLORS.chart2} 
-          strokeWidth={2}
-          name="Settlements" 
-          dot={{ r: 4, strokeWidth: 2, fill: COLORS.background }}
-          activeDot={{ r: 6, strokeWidth: 0, fill: COLORS.chart2 }}
-        />
-      </LineChart>
+        <Legend wrapperStyle={{ fontSize: 14, paddingTop: 20 }} />
+        <Area yAxisId="left" type="monotone" dataKey="claims" name="Analyses" stroke={COLORS.chart1} fillOpacity={1} fill="url(#colorClaims)" />
+        <Area yAxisId="right" type="monotone" dataKey="averageCost" name="Average Cost" stroke={COLORS.chart2} fillOpacity={1} fill="url(#colorCost)" />
+      </AreaChart>
     </ResponsiveContainer>
   );
 
@@ -378,12 +352,76 @@ export default function AnalysisChart({
     </ResponsiveContainer>
   );
 
+  const renderSeverityBreakdownPieChart = () => {
+    // Process the data to get severity breakdown
+    let severityData: Array<{ name: string; value: number; fill: string }> = [];
+    
+    if (Array.isArray(chartData) && chartData.length > 0) {
+      // If we have damage data, process it
+      const severityCount = chartData.reduce((acc: any, item: any) => {
+        const severity = item.severity || 'moderate';
+        acc[severity] = (acc[severity] || 0) + 1;
+        return acc;
+      }, {});
+      
+      severityData = Object.entries(severityCount).map(([severity, count]) => ({
+        name: severity.charAt(0).toUpperCase() + severity.slice(1),
+        value: count as number,
+        fill: severity === 'critical' ? '#ef4444' : 
+              severity === 'severe' ? '#f97316' : 
+              severity === 'moderate' ? '#eab308' : '#22c55e'
+      }));
+    } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+      // If we have severity breakdown object directly
+      severityData = Object.entries(data).map(([severity, count]) => ({
+        name: severity.charAt(0).toUpperCase() + severity.slice(1),
+        value: count as number,
+        fill: severity === 'critical' ? '#ef4444' : 
+              severity === 'severe' ? '#f97316' : 
+              severity === 'moderate' ? '#eab308' : '#22c55e'
+      }));
+    }
+    
+    if (severityData.length === 0) {
+      return <div className="text-center p-4 text-gray-600">No severity data available.</div>;
+    }
+    
+    return (
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={severityData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {severityData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
+  const formatCurrency = (value: number) => {
+    if (typeof value !== 'number' || isNaN(value)) return '$0';
+    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  };
+
   // This switch statement or similar logic determines which chart to render.
   // It should be present in the actual file. The following is an example.
   // Ensure all render functions called here use the corrected data sources (chartData, insData).
   switch (type) {
     case 'damage-analysis':
-      // Ensure chartData is Array<{ type: string; value: number }>
+      // Ensure chartData is Array<{ type: string, value: number }>
       if (Array.isArray(chartData) && chartData.every(item => 'type' in item && 'value' in item)) {
         return renderDamageAnalysis();
       } else {
@@ -399,8 +437,7 @@ export default function AnalysisChart({
     case 'insurance-trends':
       return renderInsuranceTrends();
     case 'severity-breakdown':
-      // return renderSeverityBreakdownPieChart(chartData); // This function would need to be defined
-      return <div className="text-gray-600 p-4">Severity Breakdown Pie Chart - Placeholder</div>;
+      return renderSeverityBreakdownPieChart();
     case 'time-series':
       if (Array.isArray(chartData) && chartData.length > 0) {
         const firstItem = chartData[0];

@@ -4,18 +4,18 @@ import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { FirebaseAuthProvider } from './context/FirebaseAuthContext';
 import { HistoryProvider } from './context/HistoryContext';
+import { DataCacheProvider } from './context/DataCacheContext';
 import './index.css'; // Assuming you have a global CSS file
-
-// Import quota reset utility for development
-import './utils/reset-quota';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <FirebaseAuthProvider>
       <AuthProvider>
-        <HistoryProvider>
-          <App />
-        </HistoryProvider>
+        <DataCacheProvider>
+          <HistoryProvider>
+            <App />
+          </HistoryProvider>
+        </DataCacheProvider>
       </AuthProvider>
     </FirebaseAuthProvider>
   </React.StrictMode>

@@ -52,7 +52,6 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
     
     // Notify user about API enablement if needed
     console.log('Starting Google authentication process...');
-    import('@/lib/firebase-config-check'); // Import to check configuration
     
     try {
       console.log('Calling signInWithGoogle...');

@@ -318,8 +318,8 @@ const convertToStructuredResult = (rawAnalysis: string): DamageResult => {
  */
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
-  maxRetries: number = DEVELOPMENT_MODE && BYPASS_QUOTA_IN_DEV ? 1 : 2, // Fewer retries in dev mode
-  baseDelay: number = DEVELOPMENT_MODE && BYPASS_QUOTA_IN_DEV ? 500 : 1000 // Shorter delays in dev mode
+  maxRetries: number = DEVELOPMENT_MODE && BYPASS_QUOTA_IN_DEV ? 1 : 1, // Even fewer retries for speed
+  baseDelay: number = DEVELOPMENT_MODE && BYPASS_QUOTA_IN_DEV ? 200 : 500 // Much shorter delays for speed
 ): Promise<T> => {
   let lastError: Error;
   
@@ -337,8 +337,8 @@ const retryWithBackoff = async <T>(
                                  error.message.match(/retry_delay_seconds['":\s]*(\d+)/);
           let retryDelay = retryDelayMatch ? parseInt(retryDelayMatch[1]) * 1000 : baseDelay * Math.pow(2, attempt);
           
-          // Cap the retry delay to avoid extremely long waits
-          retryDelay = Math.min(retryDelay, 30000); // Max 30 seconds
+          // Cap the retry delay to avoid extremely long waits - REDUCED for speed
+          retryDelay = Math.min(retryDelay, 3000); // Max 3 seconds only
           
           console.log(`[retryWithBackoff] 429 error, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
           console.log(`[retryWithBackoff] Quota exceeded. Waiting ${Math.ceil(retryDelay/1000)} seconds before retry...`);
@@ -417,12 +417,20 @@ export const analyzeCarDamageWithAI = async (
     
     console.log('🔍 [damageAnalysisApi] Starting REAL Gemini AI analysis via backend...');
     
-    // Use retry logic for the API call
+    // Use retry logic for the API call with faster timeout
     const performAnalysis = async () => {
       return await unifiedApiService.analyzeDamage(imageFile);
     };
 
-    const data: DamageResult = await retryWithBackoff(performAnalysis);
+    // Add a quick timeout race condition to prevent long waits
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('QUOTA_EXCEEDED_USE_DEMO')), 10000); // 10 second max wait
+    });
+
+    const data: DamageResult = await Promise.race([
+      retryWithBackoff(performAnalysis),
+      timeoutPromise
+    ]);
     
     console.log('✅ [damageAnalysisApi] Real AI analysis completed successfully!');
     
@@ -509,56 +517,86 @@ const getInstantTestResult = (imageName: string): DamageResult => {
     // Multiple connected damage areas
     damageRegions.push(
       {
+        id: 'region_1',
         x: Math.floor(Math.random() * 150) + 100,
         y: Math.floor(Math.random() * 100) + 150,
         width: Math.floor(Math.random() * 100) + 120,
         height: Math.floor(Math.random() * 80) + 100,
         damageType: selectedDamage.type,
+        severity: selectedDamage.severity as 'minor' | 'moderate' | 'severe' | 'critical',
         confidence: confidence / 100,
-        severity: selectedDamage.severity
+        damagePercentage: Math.floor(Math.random() * 40) + 30,
+        description: `${selectedDamage.type} with ${selectedDamage.severity} severity`,
+        partName: 'side_panel',
+        estimatedCost: Math.floor(baseCost * 0.6),
+        color: '#FF5722'
       },
       {
+        id: 'region_2',
         x: Math.floor(Math.random() * 100) + 250,
         y: Math.floor(Math.random() * 80) + 180,
         width: Math.floor(Math.random() * 80) + 90,
         height: Math.floor(Math.random() * 60) + 70,
         damageType: 'Secondary Impact',
+        severity: 'minor' as const,
         confidence: (confidence - 15) / 100,
-        severity: 'minor'
+        damagePercentage: Math.floor(Math.random() * 30) + 20,
+        description: 'Secondary impact damage',
+        partName: 'side_panel',
+        estimatedCost: Math.floor(baseCost * 0.3),
+        color: '#FF9800'
       }
     );
   } else if (selectedDamage.type === 'Bumper Damage') {
     // Wide horizontal damage area
     damageRegions.push({
+      id: 'region_1',
       x: Math.floor(Math.random() * 100) + 80,
       y: Math.floor(Math.random() * 50) + 300,
       width: Math.floor(Math.random() * 120) + 200,
       height: Math.floor(Math.random() * 40) + 60,
       damageType: selectedDamage.type,
+      severity: selectedDamage.severity as 'minor' | 'moderate' | 'severe' | 'critical',
       confidence: confidence / 100,
-      severity: selectedDamage.severity
+      damagePercentage: Math.floor(Math.random() * 50) + 40,
+      description: `${selectedDamage.type} requiring repair`,
+      partName: 'front_bumper',
+      estimatedCost: baseCost,
+      color: '#FF9800'
     });
   } else if (selectedDamage.type === 'Headlight Damage') {
     // Circular/oval damage area for lights
     damageRegions.push({
+      id: 'region_1',
       x: Math.floor(Math.random() * 100) + 120,
       y: Math.floor(Math.random() * 80) + 100,
       width: Math.floor(Math.random() * 60) + 80,
       height: Math.floor(Math.random() * 60) + 80,
       damageType: selectedDamage.type,
+      severity: selectedDamage.severity as 'minor' | 'moderate' | 'severe' | 'critical',
       confidence: confidence / 100,
-      severity: selectedDamage.severity
+      damagePercentage: Math.floor(Math.random() * 60) + 30,
+      description: `${selectedDamage.type} affecting visibility`,
+      partName: 'headlight',
+      estimatedCost: baseCost,
+      color: '#FF5722'
     });
   } else {
     // Standard damage area for other types
     damageRegions.push({
+      id: 'region_1',
       x: Math.floor(Math.random() * 200) + 100,
       y: Math.floor(Math.random() * 200) + 100,
       width: Math.floor(Math.random() * 100) + 120,
       height: Math.floor(Math.random() * 100) + 120,
       damageType: selectedDamage.type,
+      severity: selectedDamage.severity as 'minor' | 'moderate' | 'severe' | 'critical',
       confidence: confidence / 100,
-      severity: selectedDamage.severity
+      damagePercentage: Math.floor(Math.random() * 40) + 30,
+      description: `${selectedDamage.type} detected`,
+      partName: 'body_panel',
+      estimatedCost: baseCost,
+      color: '#4CAF50'
     });
   }
   
@@ -729,8 +767,40 @@ const getDemoAnalysisResult = (): DamageResult => {
     quotaExceeded: true,
     retryDelaySeconds: 300, // 5 minutes
     
-    // Add missing properties
-    identifiedDamageRegions: [], // Empty array for demo mode
+    // Add realistic damage regions for demo mode
+    identifiedDamageRegions: [
+      {
+        id: 'demo_region_1',
+        x: Math.floor(Math.random() * 400) + 100,
+        y: Math.floor(Math.random() * 300) + 100,
+        width: Math.floor(Math.random() * 150) + 100,
+        height: Math.floor(Math.random() * 100) + 50,
+        damageType: selectedDemo.type,
+        severity: selectedDemo.severity as 'minor' | 'moderate' | 'severe' | 'critical',
+        confidence: selectedDemo.confidence,
+        damagePercentage: Math.floor(Math.random() * 50) + 30,
+        description: `${selectedDemo.type} detected in demo mode`,
+        partName: 'front_panel',
+        estimatedCost: 15000,
+        color: '#FF9800'
+      },
+      // Add a second region occasionally
+      ...(Math.random() > 0.6 ? [{
+        id: 'demo_region_2',
+        x: Math.floor(Math.random() * 400) + 150,
+        y: Math.floor(Math.random() * 300) + 150,
+        width: Math.floor(Math.random() * 100) + 60,
+        height: Math.floor(Math.random() * 80) + 40,
+        damageType: 'Paint Damage',
+        severity: 'minor' as const,
+        confidence: 0.72,
+        damagePercentage: Math.floor(Math.random() * 30) + 20,
+        description: 'Paint damage detected in demo mode',
+        partName: 'side_panel',
+        estimatedCost: 8000,
+        color: '#4CAF50'
+      }] : [])
+    ],
     
     enhancedRepairCost: {
       conservative: {

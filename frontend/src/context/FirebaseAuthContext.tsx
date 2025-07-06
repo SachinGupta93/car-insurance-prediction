@@ -1,5 +1,5 @@
 // Description: Vite configuration file for a React project
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User as FirebaseUser, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase'; // Ensure this path is correct
 import unifiedApiService from '@/services/unifiedApiService';
@@ -29,11 +29,13 @@ export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
           
           // Automatically ensure user profile exists
           console.log('🔄 Auto-creating user profile for:', user.email);
-          await unifiedApiService.ensureUserProfile({
+          const userProfileData = {
+            uid: user.uid,
             email: user.email,
-            display_name: user.displayName || user.email?.split('@')[0] || 'User'
-          });
-          console.log('✅ User profile ensured for:', user.email);
+            name: user.displayName || (user.email ? user.email.split('@')[0] : 'New User'),
+          };
+          await unifiedApiService.ensureUserProfile(userProfileData);
+          console.log('✅ User profile ensured for:', user.email, 'with data:', userProfileData);
         } catch (error) {
           console.error('❌ Error ensuring user profile:', error);
           // Don't block user login if profile creation fails

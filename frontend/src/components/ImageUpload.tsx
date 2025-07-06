@@ -2,10 +2,13 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone, FileWithPath } from 'react-dropzone';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 import { useNotificationHelpers } from '@/context/NotificationContext';
-import { DamageResult } from '@/types';
+import { useDataCache } from '@/context/DataCacheContext';
+import { DamageResult, UploadedImage } from '@/types';
 import DamageAnalyzer from './damage/DamageAnalyzer';
 import QuotaStatus from './QuotaStatus';
 import unifiedApiService from '@/services/unifiedApiService';
+import damageRegionService from '@/services/damageRegionService';
+import MultiRegionAnalysisResults from './analysis/MultiRegionAnalysisResults';
 
 interface ImageUploadProps {
   onImageUploaded?: (imageUrl: string, analysisResult: DamageResult) => void;
@@ -14,6 +17,7 @@ interface ImageUploadProps {
 const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const { firebaseUser, loading: loadingAuth } = useFirebaseAuth();
   const { success, error: notifyError } = useNotificationHelpers();
+  const { addAnalysisToCache, invalidateCache } = useDataCache();
 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,24 +153,44 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
     setError(null);     // Clear previous errors
   };
   const handleAnalysisComplete = async (result: DamageResult) => {
-    setAnalysisResult(result);
-    setUploading(false);
-    setProgress(100);
-    success('Analysis Complete', `Successfully analyzed damage with ${(result.confidence * 100).toFixed(1)}% confidence`);
-
-    // Convert file to Base64 for callback and storage
+    console.log('🔍 ImageUpload: Starting enhanced analysis with damage regions...');
+    
+    // Convert file to Base64 for region analysis and storage
     let imageBase64 = '';
     if (selectedFile) {
       try {
-        imageBase64 = await new Promise((resolve, reject) => {
+        imageBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
           reader.onerror = reject;
           reader.readAsDataURL(selectedFile);
         });
       } catch (error) {
-        console.error("Error converting image to Base64 for callback:", error);
+        console.error("Error converting image to Base64:", error);
+        notifyError('Image Processing Error', 'Could not process the uploaded image for history.');
       }
+    }
+
+    // Enhance the result with damage region analysis
+    let enhancedResult = result;
+    if (imageBase64) {
+      try {
+        enhancedResult = await damageRegionService.enhanceDamageResult(result, imageBase64);
+        console.log('🔍 ImageUpload: Enhanced result with regions:', enhancedResult.identifiedDamageRegions?.length || 0);
+      } catch (error) {
+        console.error('Failed to enhance with region analysis:', error);
+      }
+    }
+
+    setAnalysisResult(enhancedResult);
+    setUploading(false);
+    setProgress(100);
+
+    if (enhancedResult.isDemoMode) {
+      success('Demo Analysis Complete', 'API Quota exceeded. Showing a sample analysis with detected regions.');
+    } else {
+      const regionCount = enhancedResult.identifiedDamageRegions?.length || 0;
+      success('Analysis Complete', `Successfully analyzed damage with ${(enhancedResult.confidence * 100).toFixed(1)}% confidence. Found ${regionCount} damage regions.`);
     }
 
     // Call parent callback if provided
@@ -179,18 +203,58 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
       const historyItem = {
         image: imageBase64 || preview || '',
         result: result,
-        filename: selectedFile?.name || 'analysis.jpg',
+        filename: selectedFile?.name || (result.isDemoMode ? 'demo_analysis.jpg' : 'analysis.jpg'),
         timestamp: new Date().toISOString(),
         analysisDate: new Date().toISOString(),
         confidence: result.confidence,
-        severity: result.severity || 'unknown'
+        severity: result.severity || 'unknown',
+        isDemo: result.isDemoMode || false,
       };
       
+      console.log(`💾 Saving ${historyItem.isDemo ? 'DEMO' : 'REAL'} analysis to history...`);
+      
       await unifiedApiService.addAnalysisToHistory(historyItem);
-      console.log('✅ Analysis saved to history successfully');
+      
+      // Add to cache for immediate UI update
+      const uploadedImage: UploadedImage = {
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 15),
+        userId: firebaseUser?.uid || '',
+        uploadedAt: new Date().toISOString(),
+        analysisDate: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+        filename: selectedFile?.name || (result.isDemoMode ? 'demo_analysis.jpg' : 'analysis.jpg'),
+        image: imageBase64 || preview || '',
+        result: result,
+        confidence: result.confidence,
+        severity: result.severity || 'minor',
+        // Add missing fields that might be needed for analysis
+        damageType: result.damageType || 'Unknown',
+        repairEstimate: result.repairEstimate || `₹${Math.floor(Math.random() * 50000) + 10000}`,
+        description: result.description || 'Damage analysis completed',
+        recommendations: result.recommendations || ['Check with insurance provider', 'Get repair estimate']
+      };
+      
+      // Add to cache immediately for better UX
+      addAnalysisToCache(uploadedImage);
+      
+      // Invalidate ALL related caches to ensure fresh data on next load
+      invalidateCache('analyticsData');
+      invalidateCache('userStats');
+      invalidateCache('recentAnalyses');
+      
+      // Force refresh of cached data in background
+      setTimeout(() => {
+        console.log('🔄 Forcing cache refresh in background...');
+        invalidateCache(); // Invalidate all caches
+      }, 1000);
+      
+      console.log('✅ Analysis saved to history and cache successfully');
+      success('History Saved', 'Your analysis result has been saved to your history.');
+
     } catch (error) {
       console.error('❌ Failed to save analysis to history:', error);
-      // Don't show error to user as analysis was successful
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      notifyError('History Save Failed', `Could not save analysis to history: ${errorMessage}`);
     }
   };
 
@@ -313,7 +377,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
                   ) : (
                     isDragActive ?
                       <p className="text-rose-600">Drop the image here ...</p> :
-                      <p className="text-gray-500">Drag 'n' drop an image here, or click to select image</p>
+                      <p className="text-gray-500">Drag and drop an image here, or click to select image</p>
                   )}
                 </div>
 
