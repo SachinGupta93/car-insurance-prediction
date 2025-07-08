@@ -4,6 +4,9 @@ import json
 import logging
 import traceback
 from datetime import datetime
+from functools import wraps
+from flask import request, jsonify
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +114,21 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
                 "comprehensive": {"rupees": "₹5,000", "dollars": "$60"}
             }
     
-    def determine_damage_type_and_confidence(text: str) -> tuple:
+    def determine_damage_type_and_confidence(text) -> tuple:
         """Determine primary damage type and confidence from AI response"""
-        text_lower = text.lower()
+        # Handle both string and dict inputs
+        if isinstance(text, dict):
+            # If it's a dict, try to extract text from common fields
+            if 'error' in text:
+                return "Analysis Error", 0.0
+            elif 'raw_analysis' in text:
+                text_str = str(text.get('raw_analysis', ''))
+            else:
+                text_str = str(text)
+        else:
+            text_str = str(text) if text is not None else ''
         
-        if "demo analysis" in text_lower or "api quota exceeded" in text_lower:
-            return "Demo Analysis", 0.85
+        text_lower = text_str.lower()
         
         no_damage_indicators = ['no damage', 'good condition', 'no visible damage']
         if any(indicator in text_lower for indicator in no_damage_indicators):
@@ -217,3 +229,117 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             "vehicleIdentification": {"make": "Unknown", "model": "Unknown", "year": "Unknown", "confidence": 0.0},
             "enhancedRepairCost": {"conservative": {"rupees": "₹0", "dollars": "$0"}, "comprehensive": {"rupees": "₹0", "dollars": "$0"}}
         }
+
+
+def require_api_key(f):
+    """
+    Decorator that checks for API key in development mode.
+    In development mode, this is bypassed for easier testing.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Always allow OPTIONS requests for CORS preflight
+        if request.method == 'OPTIONS':
+            response = jsonify({'status': 'ok'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Dev-Mode, X-Dev-Auth-Bypass')
+            return response
+            
+        # Check if we're in development mode
+        dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
+        
+        if dev_mode:
+            # In development mode, bypass API key check
+            logger.info("🔑 [DEV MODE] API key check bypassed")
+            return f(*args, **kwargs)
+        
+        # In production, check for API key
+        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        expected_key = os.environ.get('API_KEY')
+        
+        if not api_key:
+            return jsonify({'error': 'API key is required'}), 401
+        
+        if api_key != expected_key:
+            return jsonify({'error': 'Invalid API key'}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def require_admin(f):
+    """
+    Decorator that checks for admin privileges.
+    In development mode, this is bypassed for easier testing.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Always allow OPTIONS requests for CORS preflight
+        if request.method == 'OPTIONS':
+            response = jsonify({'status': 'ok'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Dev-Mode, X-Dev-Auth-Bypass')
+            return response
+            
+        # Check if we're in development mode
+        dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
+        
+        if dev_mode:
+            # In development mode, bypass admin check
+            logger.info("👑 [DEV MODE] Admin check bypassed")
+            return f(*args, **kwargs)
+        
+        # In production, check for admin privileges
+        # This would typically verify user token and check admin status
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Authorization token is required'}), 401
+        
+        # Here you would verify the token and check if user is admin
+        # For now, we'll implement a simple check
+        try:
+            # This is a simplified check - in real implementation,
+            # you'd verify the JWT token and check user roles
+            if not token.startswith('Bearer '):
+                return jsonify({'error': 'Invalid authorization format'}), 401
+            
+            # For now, accept any properly formatted token in development-like scenarios
+            return f(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Admin check error: {str(e)}")
+            return jsonify({'error': 'Invalid authorization token'}), 401
+    
+    return decorated_function
+
+
+def get_user_from_request():
+    """
+    Extract user information from request.
+    In development mode, returns a mock user.
+    """
+    dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
+    
+    if dev_mode:
+        # Return mock user for development
+        return {
+            'uid': 'dev_user',
+            'email': 'dev@example.com',
+            'name': 'Development User',
+            'admin': True
+        }
+    
+    # In production, extract from Authorization header
+    token = request.headers.get('Authorization')
+    if token:
+        # This would typically decode JWT and extract user info
+        # For now, return a basic structure
+        return {
+            'uid': 'user_from_token',
+            'email': 'user@example.com',
+            'name': 'User',
+            'admin': False
+        }
+    
+    return None

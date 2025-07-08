@@ -214,27 +214,29 @@ def add_analysis_to_history():
 
 @user_routes.route('/user/stats', methods=['GET'])
 @firebase_auth_required
-def get_my_stats():
-    """Get current user's own statistics"""
+def get_user_stats():
+    """Get user statistics, ensuring robust data handling."""
     try:
         user_id = request.user['uid']
         auth_token = _get_auth_token(request)
         if not auth_token:
             return jsonify({'error': 'Authorization token is missing or invalid'}), 401
 
-        logger.info(f"Getting stats for user {user_id}")
-        
+        # Enhanced logging to trace request source
+        requester_ip = request.remote_addr
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        logger.info(f"STATS_REQUEST: Received /user/stats request for user {user_id} from IP: {requester_ip}, User-Agent: {user_agent}")
+
         user_auth = UserAuth(current_app.config['db_ref'])
-        user_stats = user_auth.get_user_stats(user_id, auth_token)
         
-        if not user_stats:
-            return jsonify({'error': 'User profile not found'}), 404
-            
-        return jsonify(user_stats), 200
+        # This call now uses the robust parsing logic
+        stats = user_auth.get_user_stats(user_id, auth_token)
         
+        return jsonify(stats), 200
     except Exception as e:
-        logger.error(f"User stats error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"STATS_ERROR: Error getting user stats for user {request.user.get('uid', 'N/A') if request.user else 'N/A'}: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': f"An error occurred while fetching user stats: {str(e)}"}), 500
 
 @user_routes.route('/debug/user-history', methods=['GET'])
 @firebase_auth_required
@@ -274,3 +276,53 @@ def debug_user_history():
     except Exception as e:
         logger.error(f"❌ Error in debug history: {str(e)}")
         return jsonify({'error': str(e), 'success': False}), 500
+
+@user_routes.route('/user/dashboard-data', methods=['GET'])
+@firebase_auth_required
+def get_dashboard_data():
+    """Get combined dashboard data (stats + recent history) in one optimized call."""
+    try:
+        user_id = request.user['uid']
+        auth_token = _get_auth_token(request)
+        if not auth_token:
+            return jsonify({'error': 'Authorization token is missing or invalid'}), 401
+
+        logger.info(f"📊 Dashboard data request for user: {user_id}")
+
+        user_auth = UserAuth(current_app.config['db_ref'])
+        
+        # Use fast stats for dashboard (processes only 20 items max)
+        stats = user_auth.get_user_stats_fast(user_id, auth_token)
+        
+        # Extract and format recent analyses for dashboard display (limit to 5 for speed)
+        recent_analyses_raw = stats.get('recentAnalyses', [])[:5]  # Take only 5 most recent
+        formatted_recent_analyses = []
+        
+        for item in recent_analyses_raw:
+            try:
+                # Fast formatting with minimal processing
+                formatted_item = {
+                    'id': item.get('id', ''),
+                    'date': (item.get('uploadedAt') or item.get('timestamp') or item.get('created_at', '2025-01-01'))[:10],  # Quick date extraction
+                    'vehicle': item.get('result', {}).get('vehicleIdentification', {}).get('make') or 'Vehicle',
+                    'damageType': item.get('result', {}).get('damageType') or item.get('damageType') or 'Damage',
+                    'severity': item.get('result', {}).get('severity') or item.get('severity') or 'moderate',
+                    'status': 'Completed'
+                }
+                formatted_recent_analyses.append(formatted_item)
+            except Exception:
+                # Skip problematic items instead of failing
+                continue
+        
+        # Combine data for dashboard
+        dashboard_data = {
+            'stats': stats,
+            'recentAnalyses': formatted_recent_analyses
+        }
+        
+        return jsonify(dashboard_data), 200
+        
+    except Exception as e:
+        logger.error(f"💥 Error getting dashboard data for user {request.user.get('uid', 'N/A') if request.user else 'N/A'}: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': f"An error occurred while fetching dashboard data: {str(e)}"}), 500

@@ -7,13 +7,9 @@ import SignUp from './components/auth/SignUp';
 import Dashboard from './components/dashboard/Dashboard';
 import HistoryPage from './components/HistoryPage';
 import InsurancePage from './components/InsurancePage';
-import IntegrationTestPage from './components/IntegrationTestPage';
-import ProfileFixPage from './components/ProfileFixPage';
 import Auth from './components/Auth';
 import ErrorBoundary from './components/common/EnhancedErrorBoundary';
-import CacheStatus from './components/common/CacheStatus';
 import APIKeyStatusPanel from './components/APIKeyStatusPanel';
-import ApiConnectionTest from './components/debug/ApiConnectionTest';
 import { NotificationProvider } from './context/NotificationContext';
 import { useFirebaseAuth } from './context/FirebaseAuthContext';
 import './App.css';
@@ -37,7 +33,7 @@ function App() {
   return (
     <ErrorBoundary>
       <NotificationProvider>
-        <Router>
+          <Router>
           <div className="min-h-screen flex flex-col relative overflow-hidden">            {/* Clean Background with Subtle Elements */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
               {/* Clean Background */}
@@ -60,14 +56,14 @@ function App() {
               <Navbar />
             </div>
 
-            {/* API Key Status Panel (Development Only) */}
-            <APIKeyStatusPanel />
-            
-            {/* API Connection Test (Development Only) */}
-            <ApiConnectionTest />
-            
-            {/* Cache Status (Development Only) */}
-            <CacheStatus />            {/* Professional Main Content Container */}
+            {/* Development Only Components */}
+            {import.meta.env.DEV && (
+              <>
+                <APIKeyStatusPanel />
+              </>
+            )}
+
+            {/* Professional Main Content Container */}
             <main className="flex-1 relative z-30">
               <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 bg-white/90 backdrop-blur-lg shadow-lg rounded-lg my-6 border border-gray-200 transform transition-all duration-300 hover:shadow-xl hover:scale-[1.01]">
                 <Routes>
@@ -154,87 +150,12 @@ function App() {
                       </ProtectedRoute>
                     }
                   />
-                  <Route
-                    path="/profile-fix"
-                    element={
-                      <ProtectedRoute>
-                        <div className="animate-fadeInUp">
-                          <ProfileFixPage />
-                        </div>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/integration-test"
-                    element={
-                      <ProtectedRoute>
-                        <div className="animate-fadeInUp">
-                          <IntegrationTestPage />
-                        </div>
-                      </ProtectedRoute>
-                    }
-                  />
 
                   {/* Fallback Route */}
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </div>
-            </main>            {/* Professional Footer */}
-            <footer className="relative z-40 mt-auto bg-white border-t border-gray-200">
-              <div className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
-                {/* Footer Header with Brand */}
-                <div className="text-center mb-8">
-                  <div className="flex items-center justify-center mb-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-rose-200 to-emerald-200 rounded-lg flex items-center justify-center shadow-md hover:shadow-lg hover:scale-105 transition-all duration-300">
-                      <svg className="w-7 h-7 text-black" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 10 5.16-.26 9-4.45 9-10V7l-10-5z"/>
-                        <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </div>
-                    <div className="ml-4 text-left">
-                      <h3 className="text-2xl font-bold text-black hover:text-gray-700 transition-colors duration-300">
-                        Car Damage AI
-                      </h3>
-                      <p className="text-sm text-gray-600 font-medium">Intelligent Assessment Platform</p>
-                    </div>
-                  </div>
-                  
-                  <p className="text-gray-600 max-w-2xl mx-auto text-base leading-relaxed hover:text-gray-800 transition-colors duration-300">
-                    Professional AI-powered damage assessment technology for automotive insurance, 
-                    repair estimation, and claims processing. Trusted by professionals worldwide.
-                  </p>
-                </div>
-                
-                {/* Footer Links */}
-                <div className="flex flex-wrap justify-center gap-x-8 gap-y-4 mb-8">
-                  <a href="#" className="text-gray-600 hover:text-black text-sm font-medium transition-all duration-300 hover:underline decoration-rose-200 underline-offset-4 hover:scale-105">Privacy Policy</a>
-                  <a href="#" className="text-gray-600 hover:text-black text-sm font-medium transition-all duration-300 hover:underline decoration-rose-200 underline-offset-4 hover:scale-105">Terms of Service</a>
-                  <a href="#" className="text-gray-600 hover:text-black text-sm font-medium transition-all duration-300 hover:underline decoration-rose-200 underline-offset-4 hover:scale-105">API Documentation</a>
-                  <a href="#" className="text-gray-600 hover:text-black text-sm font-medium transition-all duration-300 hover:underline decoration-rose-200 underline-offset-4 hover:scale-105">Support Center</a>
-                  <a href="#" className="text-gray-600 hover:text-black text-sm font-medium transition-all duration-300 hover:underline decoration-rose-200 underline-offset-4 hover:scale-105">Contact Us</a>
-                </div>
-
-                {/* Footer Bottom */}
-                <div className="border-t border-gray-200 pt-8">
-                  <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-                    <p className="text-gray-600 text-sm">
-                      &copy; {new Date().getFullYear()} Car Damage AI. All rights reserved.
-                    </p>
-                    
-                    <div className="flex items-center space-x-6">
-                      <div className="flex items-center space-x-2 text-xs">
-                        <span className="text-gray-600">Powered by</span>
-                        <span className="text-black font-semibold">Advanced AI</span>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-emerald-200 rounded-full animate-pulse"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </footer>
+            </main>
           </div>
         </Router>
       </NotificationProvider>

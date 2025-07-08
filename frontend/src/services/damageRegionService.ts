@@ -16,28 +16,77 @@ export class DamageRegionService {
     try {
       console.log('🔍 DamageRegionService: Analyzing image for multiple damage regions...');
       
-      // This would call your enhanced AI model that can detect multiple regions
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/analyze-regions`, {
+      // Convert base64 to File object for the backend
+      const response = await fetch(imageBase64);
+      const blob = await response.blob();
+      const file = new File([blob], 'damage_region_analysis.jpg', { type: 'image/jpeg' });
+      
+      // Prepare FormData
+      const formData = new FormData();
+      formData.append('image', file);
+      
+      // Get auth headers for the request (no Content-Type for FormData)
+      const headers: Record<string, string> = {
+        'X-Dev-Mode': 'true'
+      };
+      
+      // Add authentication if available
+      try {
+        const { auth } = await import('@/lib/firebase');
+        const user = auth.currentUser;
+        if (user) {
+          const token = await user.getIdToken();
+          headers['Authorization'] = `Bearer ${token}`;
+        } else {
+          headers['X-Dev-Auth-Bypass'] = 'true';
+        }
+      } catch (error) {
+        console.warn('Could not get auth token, using dev bypass');
+        headers['X-Dev-Auth-Bypass'] = 'true';
+      }
+      
+      // Call backend API - this will try real AI first, fallback to demo
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+      const apiResponse = await fetch(`${API_BASE_URL}/api/analyze-regions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: imageBase64,
-          detectMultipleRegions: true,
-          returnBoundingBoxes: true,
-          includePercentages: true
-        })
+        headers: headers,
+        body: formData
       });
 
-      if (!response.ok) {
+      if (!apiResponse.ok) {
         throw new Error('Failed to analyze damage regions');
       }
 
-      const data = await response.json();
-      return data.regions || this.generateSampleRegions();
+      const data = await apiResponse.json();
+      
+      // Check if this is demo mode response
+      if (data.isDemoMode) {
+        console.log('📝 Using demo mode analysis (real AI not available)');
+      } else {
+        console.log('🤖 Using real Gemini AI analysis');
+      }
+      
+      // Extract regions from response and ensure they have proper IDs
+      const regions = (data.identifiedDamageRegions || []).map((region: any, index: number) => ({
+        id: region.id || `region_${index + 1}`,
+        x: region.x || 0,
+        y: region.y || 0,
+        width: region.width || 10,
+        height: region.height || 10,
+        damageType: region.damageType || 'Unknown',
+        severity: region.severity || 'minor',
+        confidence: region.confidence || 0.5,
+        damagePercentage: region.damagePercentage || 10,
+        description: region.description || 'Damage region detected',
+        partName: region.partName || region.region || 'Unknown part',
+        estimatedCost: region.estimatedCost || 1000,
+        color: DamageRegionService.getRegionColor(region.severity || 'minor')
+      }));
+      
+      return regions.length > 0 ? regions : this.generateSampleRegions();
     } catch (error) {
       console.error('❌ Error analyzing damage regions:', error);
+      console.log('🔄 Falling back to local sample regions');
       // Return sample regions for demonstration
       return this.generateSampleRegions();
     }

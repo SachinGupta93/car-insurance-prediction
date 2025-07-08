@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Filter, Car, Download } from 'lucide-react';
-import { useDataCache } from '@/context/DataCacheContext';
-import { FallbackDataService } from '@/services/fallbackDataService';
+import { useFirebaseService } from '@/services/firebaseService';
 import { UploadedImage } from '@/types';
 
 interface Claim {
@@ -15,7 +14,7 @@ interface Claim {
 }
 
 const ClaimsManagement = () => {
-  const { getRecentAnalyses } = useDataCache();
+  const firebaseService = useFirebaseService();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +26,7 @@ const ClaimsManagement = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const history: UploadedImage[] = await getRecentAnalyses();
+        const history: UploadedImage[] = await firebaseService.getAnalysisHistory();
         const transformedClaims = history.map((item, index) => {
           const costMatch = item.result?.repairEstimate?.match(/₹(\d+(?:,\d+)*)/);
           const cost = costMatch ? parseInt(costMatch[1].replace(/,/g, ''), 10) : 0;
@@ -51,25 +50,13 @@ const ClaimsManagement = () => {
         setClaims(transformedClaims);
       } catch (err) {
         console.error("Failed to load claims:", err);
-        setError('Failed to load claims data. Displaying sample data instead.');
-        // Generate fallback claims
-        const fallbackHistory = FallbackDataService.generateSampleHistory();
-        const fallbackClaims = fallbackHistory.map((item, index) => ({
-            id: item.id || `fallback_${index}`,
-            claimNumber: `CLM-FB-2024-${1000 + index}`,
-            vehicleModel: item.result?.vehicleIdentification?.make || 'Sample Vehicle',
-            damageType: item.result?.damageType || 'Sample Damage',
-            estimatedCost: parseInt(item.result?.repairEstimate?.replace(/[^0-9]/g, '') || '25000', 10),
-            status: 'approved' as const,
-            submissionDate: item.uploadedAt || new Date().toISOString(),
-        }));
-        setClaims(fallbackClaims);
+        setError('Failed to load claims data. Please try again later.');
       }
       setIsLoading(false);
     };
 
     loadClaims();
-  }, [getRecentAnalyses]);
+  }, [firebaseService]);
 
   const filteredClaims = useMemo(() => {
     return claims

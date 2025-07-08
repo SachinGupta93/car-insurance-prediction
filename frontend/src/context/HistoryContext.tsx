@@ -88,17 +88,6 @@ export const HistoryProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error('Failed to load history from Firebase:', err);
       setErrorHistory('Failed to load analysis history. Please try again.');
-      
-      // Fallback to localStorage for offline access
-      try {
-        const storedHistory = localStorage.getItem('analysisHistory');
-        if (storedHistory) {
-          const parsed = JSON.parse(storedHistory);
-          setHistory(parsed);
-        }
-      } catch (localErr) {
-        console.error('Failed to load from localStorage fallback:', localErr);
-      }
     } finally {
       setLoadingHistory(false);
     }
@@ -113,9 +102,21 @@ export const HistoryProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (history.length > 0) {
       try {
-        localStorage.setItem('analysisHistory', JSON.stringify(history));
+        // Only store essential data without large base64 images to avoid quota issues
+        const lightweightHistory = history.map(item => ({
+          ...item,
+          image: '', // Remove large base64 images from localStorage backup
+        })).slice(-10); // Only keep last 10 items
+        
+        localStorage.setItem('analysisHistory', JSON.stringify(lightweightHistory));
       } catch (err) {
         console.error('Failed to backup history to localStorage:', err);
+        // If still failing, clear localStorage entirely
+        try {
+          localStorage.removeItem('analysisHistory');
+        } catch (clearErr) {
+          console.error('Failed to clear localStorage:', clearErr);
+        }
       }
     }
   }, [history]);

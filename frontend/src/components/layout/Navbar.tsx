@@ -1,24 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
-import { useDataCache } from '@/context/DataCacheContext';
 
 const Navbar: React.FC = () => {
   const { firebaseUser, loading: loadingAuth, signOut } = useFirebaseAuth();
-  const { getAnalysisHistory, getAnalyticsData } = useDataCache();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();  const isActive = (path: string) => {
     return location.pathname === path ? 'bg-rose-200 text-black' : 'text-gray-700 hover:text-black';
   };
-
-  // Prefetch data when user is authenticated
-  useEffect(() => {
-    if (firebaseUser && !loadingAuth) {
-      // Prefetch data in background to improve page load times
-      getAnalysisHistory().catch(console.error);
-      getAnalyticsData().catch(console.error);
-    }
-  }, [firebaseUser, loadingAuth, getAnalysisHistory, getAnalyticsData]);
 
   const handleLogout = async () => {
     try {

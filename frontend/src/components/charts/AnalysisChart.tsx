@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { networkManager } from '@/utils/networkManager';
 import { 
   BarChart, 
   Bar, 
@@ -42,11 +44,12 @@ interface InsuranceData {
 
 interface ChartProps {
   data?: { [key: string]: number } | Array<{ date: string; count: number }> | CostData[]; // Updated to include CostData[]
-  type?: 'damage-analysis' | 'cost-estimate' | 'insurance-trends' | 'severity-breakdown' | 'time-series'; 
+  type?: 'damage-analysis' | 'cost-estimate' | 'insurance-trends' | 'severity-breakdown' | 'time-series' | 'coverage-breakdown' | 'claim-status'; 
   title?: string;
   className?: string;
   insuranceData?: InsuranceData[]; // Added for insurance trends
   damageData?: DamageData[]; // Added for damage data
+  onDataRefresh?: () => Promise<void>;
 }
 
 const COLORS = {
@@ -102,7 +105,9 @@ export default function AnalysisChart({
     dataType: typeof data,
     dataLength: Array.isArray(data) ? data.length : 'not array',
     hasInsuranceData: !!insuranceData,
-    hasDamageData: !!damageData
+    insuranceDataLength: Array.isArray(insuranceData) ? insuranceData.length : 'not array',
+    hasDamageData: !!damageData,
+    damageDataLength: Array.isArray(damageData) ? damageData.length : 'not array'
   });
 
   // chartData will hold the processed data for rendering
@@ -150,8 +155,21 @@ export default function AnalysisChart({
   });
 
   // Check if we have any data to display
-  if (!chartData || (Array.isArray(chartData) && chartData.length === 0) || (typeof chartData === 'object' && Object.keys(chartData).length === 0)) {
-    console.log('📊 AnalysisChart: No data available for chart type:', type);
+  const hasValidData = chartData && (
+    (Array.isArray(chartData) && chartData.length > 0) ||
+    (typeof chartData === 'object' && Object.keys(chartData).length > 0)
+  );
+
+  console.log('📊 AnalysisChart: Data validation:', {
+    hasValidData,
+    chartDataExists: !!chartData,
+    isArray: Array.isArray(chartData),
+    arrayLength: Array.isArray(chartData) ? chartData.length : 'N/A',
+    objectKeys: typeof chartData === 'object' ? Object.keys(chartData || {}).length : 'N/A'
+  });
+
+  if (!hasValidData) {
+    console.log('📊 AnalysisChart: No valid data available for chart type:', type);
     return (
       <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
         <div className="text-center">
@@ -411,21 +429,139 @@ export default function AnalysisChart({
     );
   };
 
+  // Render the coverage breakdown pie chart
+  const renderCoverageBreakdownPieChart = () => {
+    // Prepare the data for visualization if it's an object
+    const coverageData: Array<{name: string; value: number; fill: string}> = [];
+    
+    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      const coverageColors = {
+        comprehensive: '#4361ee',
+        collision: '#3a0ca3',
+        liability: '#7209b7',
+        thirdParty: '#f72585',
+        personalAccident: '#4cc9f0',
+        default: '#4895ef'
+      };
+      
+      Object.entries(data).forEach(([key, value]) => {
+        coverageData.push({
+          name: key.charAt(0).toUpperCase() + key.slice(1),
+          value: typeof value === 'number' ? value : 0,
+          fill: (coverageColors as any)[key] || coverageColors.default
+        });
+      });
+    }
+    
+    if (coverageData.length === 0) {
+      return <div className="text-center p-4 text-gray-600">No coverage data available.</div>;
+    }
+    
+    return (
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={coverageData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {coverageData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => [`${value} policies`, 'Count']} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
+  // Render the claim status pie chart
+  const renderClaimStatusPieChart = () => {
+    // Prepare the data for visualization if it's an object
+    const statusData: Array<{name: string; value: number; fill: string}> = [];
+    
+    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      const statusColors = {
+        approved: '#10b981',
+        pending: '#f59e0b',
+        rejected: '#ef4444',
+        processing: '#6366f1',
+        default: '#8b5cf6'
+      };
+      
+      Object.entries(data).forEach(([key, value]) => {
+        statusData.push({
+          name: key.charAt(0).toUpperCase() + key.slice(1),
+          value: typeof value === 'number' ? value : 0,
+          fill: (statusColors as any)[key] || statusColors.default
+        });
+      });
+    }
+    
+    if (statusData.length === 0) {
+      return <div className="text-center p-4 text-gray-600">No claim status data available.</div>;
+    }
+    
+    return (
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={statusData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {statusData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => [`${value} claims`, 'Count']} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
   const formatCurrency = (value: number) => {
     if (typeof value !== 'number' || isNaN(value)) return '$0';
     return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   };
+
+  // Add detailed logging before return
+  console.log('📊 AnalysisChart: About to render chart type:', type);
+  console.log('📊 AnalysisChart: chartData structure:', {
+    isArray: Array.isArray(chartData),
+    length: Array.isArray(chartData) ? chartData.length : 'N/A',
+    firstItem: Array.isArray(chartData) && chartData.length > 0 ? chartData[0] : 'N/A',
+    sampleKeys: Array.isArray(chartData) && chartData.length > 0 && typeof chartData[0] === 'object' ? Object.keys(chartData[0]) : 'N/A'
+  });
 
   // This switch statement or similar logic determines which chart to render.
   // It should be present in the actual file. The following is an example.
   // Ensure all render functions called here use the corrected data sources (chartData, insData).
   switch (type) {
     case 'damage-analysis':
-      // Ensure chartData is Array<{ type: string, value: number }>
-      if (Array.isArray(chartData) && chartData.every(item => 'type' in item && 'value' in item)) {
+      // More flexible validation for damage analysis
+      if (Array.isArray(chartData) && chartData.length > 0) {
+        console.log('📊 AnalysisChart: Rendering damage-analysis chart');
         return renderDamageAnalysis();
       } else {
-        return <div className="text-center p-4 text-gray-600">Damage analysis data is not in the expected format.</div>;
+        console.log('📊 AnalysisChart: No valid damage-analysis data');
+        return <div className="text-center p-4 text-gray-600">No damage analysis data available.</div>;
       }
     case 'cost-estimate':
       // Ensure chartData is CostData[]
@@ -435,9 +571,17 @@ export default function AnalysisChart({
         return <div className="text-center p-4 text-gray-600">Cost data is not in the expected format (Array&lt;CostData&gt;).</div>;
       }
     case 'insurance-trends':
+      console.log('📊 AnalysisChart: Rendering insurance-trends chart');
       return renderInsuranceTrends();
     case 'severity-breakdown':
+      console.log('📊 AnalysisChart: Rendering severity-breakdown chart');
       return renderSeverityBreakdownPieChart();
+    case 'coverage-breakdown':
+      console.log('📊 AnalysisChart: Rendering coverage-breakdown chart');
+      return renderCoverageBreakdownPieChart();
+    case 'claim-status':
+      console.log('📊 AnalysisChart: Rendering claim-status chart');
+      return renderClaimStatusPieChart();
     case 'time-series':
       if (Array.isArray(chartData) && chartData.length > 0) {
         const firstItem = chartData[0];
@@ -448,6 +592,10 @@ export default function AnalysisChart({
         }
       }
       return <div className="text-center p-4 text-gray-600">Time-series data is not in the expected format for trends.</div>;
+    case 'coverage-breakdown':
+      return renderCoverageBreakdownPieChart();
+    case 'claim-status':
+      return renderClaimStatusPieChart();
     default:
       // Default rendering logic based on inferred structure of chartData
       if (Array.isArray(chartData) && chartData.length > 0) {
@@ -462,6 +610,7 @@ export default function AnalysisChart({
           }
         }
       }
+      console.log('📊 AnalysisChart: No matching chart type or data format');
       return <div className="text-center p-4 text-gray-600">Chart type not specified or data format mismatch.</div>;
   }
 }

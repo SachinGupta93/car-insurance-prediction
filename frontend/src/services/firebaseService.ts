@@ -187,42 +187,26 @@ class FirebaseDataService {
     
     if (snapshot.exists()) {
       const data = snapshot.val();
-      const historyArray = Object.values(data) as UploadedImage[];
       
-      // Process and normalize the history data
-      const processedHistory = historyArray.map(item => {
-        // Ensure all required fields are present with fallbacks
-        const processedItem: UploadedImage = {
-          ...item,
-          // Ensure we have an image URL (use imageUrl if image is empty)
-          image: item.image || item.imageUrl || '',
-          // Ensure we have proper damage type
-          damageType: item.result?.damageType || item.damageType || 'Structural Damage',
-          // Ensure we have proper confidence
-          confidence: item.result?.confidence || item.confidence || 0.75,
-          // Ensure we have proper severity
-          severity: item.result?.severity || item.severity || 'moderate',
-          // Ensure we have proper result object
-          result: item.result || {
-            damageType: item.damageType || 'Structural Damage',
-            confidence: item.confidence || 0.75,
-            severity: item.severity || 'moderate',
-            description: 'Analysis completed successfully',
-            damageDescription: 'Damage detected and analyzed',
-            recommendations: ['Professional assessment recommended'],
-            identifiedDamageRegions: []
-          }
-        };
-        return processedItem;
-      });
+      // Fast conversion - minimal processing
+      const historyArray: UploadedImage[] = Object.entries(data).map(([key, item]: [string, any]) => ({
+        id: key,
+        ...item,
+        // Only set essential fallbacks
+        image: item.image || item.imageUrl || '',
+        damageType: item.result?.damageType || item.damageType || 'Unknown',
+        confidence: item.result?.confidence || item.confidence || 0,
+        severity: item.result?.severity || item.severity || 'moderate',
+        // Keep existing result or create minimal one
+        result: item.result || {
+          damageType: item.damageType || 'Unknown',
+          confidence: item.confidence || 0,
+          severity: item.severity || 'moderate'
+        }
+      }));
       
-      console.log('✅ FirebaseService: History loaded and processed from Firebase:', {
-        dataType: typeof data,
-        keys: Object.keys(data).slice(0, 5),
-        historyLength: processedHistory.length,
-        sample: processedHistory.slice(0, 2)
-      });
-      return processedHistory;
+      console.log(`✅ FirebaseService: Loaded ${historyArray.length} history items`);
+      return historyArray;
     }
     
     console.log('📭 FirebaseService: No history data found in Firebase');

@@ -27,14 +27,14 @@ const APIKeyStatusPanel: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   const DEV_MODE = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development';
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
   const fetchStatus = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api-status`);
+      const response = await fetch(`${API_BASE_URL}/api/status`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -54,7 +54,10 @@ const APIKeyStatusPanel: React.FC = () => {
     setError(null);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/reset-quotas`, {
+      // Note: Reset quotas endpoint not currently implemented in backend
+      setError('Reset quotas functionality not yet implemented');
+      /*
+      const response = await fetch(`${API_BASE_URL}/api/reset-quotas`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -68,6 +71,7 @@ const APIKeyStatusPanel: React.FC = () => {
       
       // Refresh status after reset
       await fetchStatus();
+      */
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset quotas');
       console.error('Error resetting quotas:', err);

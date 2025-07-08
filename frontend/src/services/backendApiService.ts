@@ -3,7 +3,7 @@
  */
 import { UploadedImage } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5174/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 class BackendApiService {
   private async getAuthHeaders(): Promise<HeadersInit> {
@@ -77,11 +77,11 @@ class BackendApiService {
     try {
       const headers = await this.getAuthHeaders();
       console.log('🌐 BackendApiService: Making request to /analysis/history', { 
-        url: `${API_BASE_URL}/analysis/history`,
+        url: `${API_BASE_URL}/api/analysis/history`,
         headers: headers
       });
 
-      const response = await fetch(`${API_BASE_URL}/analysis/history`, {
+      const response = await fetch(`${API_BASE_URL}/api/analysis/history`, {
         method: 'GET',
         headers: headers,
         credentials: 'include'
@@ -157,7 +157,7 @@ class BackendApiService {
     
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/profile`, {
         method: 'GET',
         headers: headers,
         credentials: 'include'
@@ -215,7 +215,7 @@ class BackendApiService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.CONNECTIVITY_CHECK_TIMEOUT);
       
-      const response = await fetch(`${API_BASE_URL}/health`, {
+      const response = await fetch(`${API_BASE_URL}/api/health`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal
@@ -247,7 +247,7 @@ class BackendApiService {
     
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
         method: 'GET',
         headers: headers,
         credentials: 'include'
@@ -279,7 +279,7 @@ class BackendApiService {
     
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
         method: 'PUT',
         headers: headers,
         credentials: 'include',
@@ -312,7 +312,7 @@ class BackendApiService {
     
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/ensure-profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/ensure-profile`, {
         method: 'POST',
         headers: headers,
         credentials: 'include',

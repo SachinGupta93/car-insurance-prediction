@@ -12,7 +12,7 @@ interface DamageRegionsOverlayProps {
 
 const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
   imageUrl,
-  regions,
+  regions = [], // Default to empty array
   showLabels = true,
   interactive = true,
   onRegionClick
@@ -22,6 +22,39 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Defensive programming: filter out invalid regions with more lenient checks
+  const validRegions = regions.filter(region => {
+    if (!region) return false;
+    
+    // Check if essential properties exist (can be numbers, strings, or undefined)
+    const hasCoordinates = (
+      region.x !== null && region.x !== undefined &&
+      region.y !== null && region.y !== undefined &&
+      region.width !== null && region.width !== undefined &&
+      region.height !== null && region.height !== undefined
+    );
+    
+    const hasBasicInfo = region.damageType || region.severity;
+    
+    console.log('🔍 Region validation:', {
+      region,
+      hasCoordinates,
+      hasBasicInfo,
+      x: region.x,
+      y: region.y,
+      width: region.width,
+      height: region.height
+    });
+    
+    return hasCoordinates && hasBasicInfo;
+  });
+
+  console.log('🔍 DamageRegionsOverlay received:', { 
+    totalRegions: regions.length, 
+    validRegions: validRegions.length,
+    sampleRegion: regions[0]
+  });
 
   useEffect(() => {
     const img = imageRef.current;
@@ -36,6 +69,11 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
     if (img) {
       setImageDimensions({ width: img.offsetWidth, height: img.offsetHeight });
       setImageLoaded(true);
+      
+      // Debug: Log regions data
+      console.log('🔍 DamageRegionsOverlay - Regions received:', regions);
+      console.log('🔍 DamageRegionsOverlay - Image dimensions:', { width: img.offsetWidth, height: img.offsetHeight });
+      console.log('🔍 DamageRegionsOverlay - Image loaded:', imageLoaded);
     }
   };
 
@@ -46,18 +84,22 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
     }
   };
 
-  const getSeverityColor = (severity: string) => {
+  const getSeverityColor = (severity: string | undefined) => {
+    if (!severity) return '#2196F3'; // Default blue color
+    
     const colors: Record<string, string> = {
       minor: '#4CAF50',      // Green
       moderate: '#FF9800',   // Orange
       severe: '#FF5722',     // Deep Orange
       critical: '#F44336'    // Red
     };
-    return colors[severity] || '#2196F3';
+    return colors[severity.toLowerCase()] || '#2196F3';
   };
 
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
+  const getSeverityIcon = (severity: string | undefined) => {
+    if (!severity) return <Info className="w-3 h-3" />;
+    
+    switch (severity.toLowerCase()) {
       case 'minor':
         return <Info className="w-3 h-3" />;
       case 'moderate':
@@ -82,55 +124,116 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
         onLoad={handleImageLoad}
         style={{ display: 'block' }}
       />
+      
+      {/* Debug Info */}
+      {imageLoaded && validRegions.length > 0 && (
+        <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded text-xs">
+          {validRegions.length} region{validRegions.length > 1 ? 's' : ''} detected
+        </div>
+      )}
 
       {/* Damage Region Overlays */}
-      {imageLoaded && regions.map((region) => (
-        <div
-          key={region.id}
-          className={`absolute border-2 cursor-pointer transition-all duration-200 ${
-            selectedRegion?.id === region.id ? 'border-4 shadow-lg' : 'hover:border-4'
-          }`}
-          style={{
-            left: `${(region.x / 100) * imageDimensions.width}px`,
-            top: `${(region.y / 100) * imageDimensions.height}px`,
-            width: `${(region.width / 100) * imageDimensions.width}px`,
-            height: `${(region.height / 100) * imageDimensions.height}px`,
-            borderColor: region.color || getSeverityColor(region.severity),
-            borderStyle: region.damageType === 'crack' ? 'dashed' : 'solid',
-            backgroundColor: `${region.color || getSeverityColor(region.severity)}20` // 20% opacity
-          }}
-          onClick={() => handleRegionClick(region)}
-          title={`${region.damageType} - ${region.severity} (${region.damagePercentage}%)`}
-        >
-          {/* Region Label */}
-          {showLabels && (
-            <div
-              className="absolute -top-8 left-0 bg-white rounded px-2 py-1 shadow-md text-xs font-medium z-10"
-              style={{
-                backgroundColor: region.color || getSeverityColor(region.severity),
-                color: 'white',
-                minWidth: '80px'
-              }}
-            >
-              <div className="flex items-center gap-1">
-                {getSeverityIcon(region.severity)}
-                <span>{region.damageType}</span>
-              </div>
-              <div className="text-xs opacity-90">{region.damagePercentage}%</div>
-            </div>
-          )}
-
-          {/* Region Number */}
+      {imageLoaded && validRegions.map((region, index) => {
+        // Convert coordinates to numbers
+        const regionX = Number(region.x) || 0;
+        const regionY = Number(region.y) || 0;
+        const regionWidth = Number(region.width) || 10;
+        const regionHeight = Number(region.height) || 10;
+        
+        // Determine if coordinates are in pixels or percentage
+        const isPixelCoords = regionX > 100 || regionY > 100 || regionWidth > 100 || regionHeight > 100;
+        
+        // Calculate coordinates based on format
+        let left, top, width, height;
+        
+        if (isPixelCoords) {
+          // Direct pixel coordinates
+          left = regionX;
+          top = regionY;
+          width = regionWidth;
+          height = regionHeight;
+        } else {
+          // Percentage coordinates
+          left = (regionX / 100) * imageDimensions.width;
+          top = (regionY / 100) * imageDimensions.height;
+          width = (regionWidth / 100) * imageDimensions.width;
+          height = (regionHeight / 100) * imageDimensions.height;
+        }
+        
+        console.log(`🔍 Region ${index + 1} coordinates:`, {
+          original: { x: regionX, y: regionY, width: regionWidth, height: regionHeight },
+          isPixelCoords,
+          calculated: { left, top, width, height },
+          imageDimensions
+        });
+        
+        return (
           <div
-            className="absolute -top-2 -right-2 w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center"
+            key={region.id || `region-${index}`}
+            className={`absolute border-2 cursor-pointer transition-all duration-200 ${
+              selectedRegion?.id === region.id ? 'border-4 shadow-lg' : 'hover:border-4'
+            }`}
             style={{
-              backgroundColor: region.color || getSeverityColor(region.severity)
+              left: `${left}px`,
+              top: `${top}px`,
+              width: `${width}px`,
+              height: `${height}px`,
+              borderColor: region.color || getSeverityColor(region.severity),
+              borderStyle: region.damageType === 'crack' ? 'dashed' : 'solid',
+              backgroundColor: `${region.color || getSeverityColor(region.severity)}20` // 20% opacity
             }}
+            onClick={() => handleRegionClick(region)}
+            title={`${region.damageType || 'Unknown'} - ${region.severity || 'unknown'} (${region.damagePercentage || 0}%)`}
           >
-            {region.id.split('_')[1] || regions.indexOf(region) + 1}
+            {/* Region Label */}
+            {showLabels && (
+              <div
+                className="absolute -top-8 left-0 bg-white rounded px-2 py-1 shadow-md text-xs font-medium z-10"
+                style={{
+                  backgroundColor: region.color || getSeverityColor(region.severity),
+                  color: 'white',
+                  minWidth: '80px'
+                }}
+              >
+                <div className="flex items-center gap-1">
+                  {getSeverityIcon(region.severity)}
+                  <span>{region.damageType || 'Unknown'}</span>
+                </div>
+                <div className="text-xs opacity-90">{region.damagePercentage || 0}%</div>
+              </div>
+            )}
+
+            {/* Region Number */}
+            <div
+              className="absolute -top-2 -right-2 w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center"
+              style={{
+                backgroundColor: region.color || getSeverityColor(region.severity)
+              }}
+             >
+              {(region.id && typeof region.id === 'string' && region.id.split('_')[1]) || validRegions.indexOf(region) + 1}
+            </div>
           </div>
+        );
+      })}
+      
+      {/* Fallback: Show region indicators when coordinates might not be working */}
+      {imageLoaded && validRegions.length > 0 && (
+        <div className="absolute bottom-2 left-2 flex gap-2">
+          {validRegions.map((region, index) => (
+            <div
+              key={`indicator-${region.id || index}`}
+              className="flex items-center gap-1 bg-white/90 px-2 py-1 rounded text-xs shadow-sm cursor-pointer"
+              style={{
+                borderLeft: `3px solid ${region.color || getSeverityColor(region.severity)}`
+              }}
+              onClick={() => handleRegionClick(region)}
+            >
+              <span className="font-medium">{index + 1}</span>
+              <span className="text-gray-600">{region.damageType}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
       {/* Region Details Modal */}
       {selectedRegion && (
@@ -157,11 +260,11 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
                     backgroundColor: selectedRegion.color || getSeverityColor(selectedRegion.severity)
                   }}
                 >
-                  {selectedRegion.id.split('_')[1] || '1'}
+                  {(selectedRegion.id && typeof selectedRegion.id === 'string' && selectedRegion.id.split('_')[1]) || '1'}
                 </div>
                 <div>
                   <h4 className="font-semibold text-gray-800 capitalize">
-                    {selectedRegion.damageType.replace('_', ' ')}
+                    {(selectedRegion.damageType || 'Unknown').replace('_', ' ')}
                   </h4>
                   <p className="text-sm text-gray-600">
                     {selectedRegion.partName?.replace('_', ' ') || 'Unknown Part'}

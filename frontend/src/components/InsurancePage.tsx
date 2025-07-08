@@ -1,8 +1,8 @@
 import React from 'react';
 import { Shield, TrendingUp, FileText, LifeBuoy } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import InsuranceDashboard from './insurance/InsuranceDashboard';
 import {
-  InsuranceDashboard,
   ClaimsManagement,
   InsuranceMarketplace,
   InsuranceResources

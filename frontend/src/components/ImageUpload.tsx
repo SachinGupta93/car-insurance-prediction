@@ -2,10 +2,8 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDropzone, FileWithPath } from 'react-dropzone';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 import { useNotificationHelpers } from '@/context/NotificationContext';
-import { useDataCache } from '@/context/DataCacheContext';
 import { DamageResult, UploadedImage } from '@/types';
 import DamageAnalyzer from './damage/DamageAnalyzer';
-import QuotaStatus from './QuotaStatus';
 import unifiedApiService from '@/services/unifiedApiService';
 import damageRegionService from '@/services/damageRegionService';
 import MultiRegionAnalysisResults from './analysis/MultiRegionAnalysisResults';
@@ -17,7 +15,6 @@ interface ImageUploadProps {
 const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const { firebaseUser, loading: loadingAuth } = useFirebaseAuth();
   const { success, error: notifyError } = useNotificationHelpers();
-  const { addAnalysisToCache, invalidateCache } = useDataCache();
 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -234,22 +231,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
         recommendations: result.recommendations || ['Check with insurance provider', 'Get repair estimate']
       };
       
-      // Add to cache immediately for better UX
-      addAnalysisToCache(uploadedImage);
-      
-      // Invalidate ALL related caches to ensure fresh data on next load
-      invalidateCache('analyticsData');
-      invalidateCache('userStats');
-      invalidateCache('recentAnalyses');
-      
-      // Force refresh of cached data in background
-      setTimeout(() => {
-        console.log('🔄 Forcing cache refresh in background...');
-        invalidateCache(); // Invalidate all caches
-      }, 1000);
-      
-      console.log('✅ Analysis saved to history and cache successfully');
-      success('History Saved', 'Your analysis result has been saved to your history.');
+      console.log('✅ Analysis completed successfully');
+      success('Analysis Complete', 'Your damage analysis has been completed successfully.');
 
     } catch (error) {
       console.error('❌ Failed to save analysis to history:', error);
@@ -341,11 +324,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
                   <h1 className="text-3xl font-bold text-black mb-2">
                     AI Car Damage Analyzer
                   </h1>
-                  
-                  {/* Quota Status */}
-                  <div className="mb-4 max-w-md mx-auto">
-                    <QuotaStatus />
-                  </div>
                   
                   <p className="text-lg text-gray-600">
                     Upload an image of your car to get an instant damage analysis and repair estimate.

@@ -1,129 +1,70 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ImageHistory from './ImageHistory';
 import { useHistory, AnalysisHistoryItem } from '@/context/HistoryContext';
-import { useDataCache } from '@/context/DataCacheContext';
-import { FallbackDataService } from '@/services/fallbackDataService';
 
 type FilterType = 'all' | 'recent' | 'dent' | 'scratch' | 'glass' | 'severe';
+type SortOrder = 'newest' | 'oldest' | 'confidence';
 
 const HistoryPage: React.FC = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const { history } = useHistory();
-  const { getAnalysisHistory, isLoading } = useDataCache();
-  const [displayHistory, setDisplayHistory] = useState<AnalysisHistoryItem[]>([]);
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const { history, loadingHistory, errorHistory, refreshHistory } = useHistory();
 
-  console.log('📚 HistoryPage: Rendering with data:', {
-    historyLength: history.length,
-    filter,
-    searchTerm,
-    sampleHistory: history.slice(0, 2)
-  });
-
-  // Load analysis history with caching
   useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const cachedHistory = await getAnalysisHistory();
-        if (cachedHistory.length > 0) {
-          console.log('📚 HistoryPage: Using cached history data:', cachedHistory.length + ' items');
-          setDisplayHistory(cachedHistory);
-        } else if (history.length > 0) {
-          console.log('📚 HistoryPage: Using context history data:', history.length + ' items');
-          setDisplayHistory(history);
-        } else {
-          console.log('📭 HistoryPage: No history available, using fallback data...');
-          const fallbackHistory = FallbackDataService.generateSampleHistory();
-          console.log('✅ HistoryPage: Fallback history loaded:', fallbackHistory.length + ' items');
-          // Transform UploadedImage[] to AnalysisHistoryItem[]
-          const transformedHistory = fallbackHistory.map(item => ({
-            ...item,
-            userId: item.userId || 'unknown', // Ensure userId is always a string
-            imageUrl: item.image,
-            analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(), // Ensure analysisDate is always a string
-            damageDescription: item.result?.description || 'No description available',
-            damageType: (item as any).damageType || item.result?.damageType || 'Unknown',
-            description: item.result?.description || 'No description available',
-            recommendations: ['Check with insurance provider', 'Get repair estimate', 'Schedule repair'],
-            confidence: item.confidence || item.result?.confidence || 0 // Ensure confidence is always a number
-          }));
-          setDisplayHistory(transformedHistory);
-        }
-      } catch (error) {
-        console.error('Error loading history:', error);
-        // Fallback to existing history or sample data
-        if (history.length > 0) {
-          setDisplayHistory(history);
-        } else {
-          const fallbackHistory = FallbackDataService.generateSampleHistory();
-          const transformedHistory = fallbackHistory.map(item => ({
-            ...item,
-            userId: item.userId || 'unknown',
-            imageUrl: item.image,
-            analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(),
-            damageDescription: item.result?.description || 'No description available',
-            damageType: (item as any).damageType || item.result?.damageType || 'Unknown',
-            description: item.result?.description || 'No description available',
-            recommendations: ['Check with insurance provider', 'Get repair estimate', 'Schedule repair'],
-            confidence: item.confidence || item.result?.confidence || 0
-          }));
-          setDisplayHistory(transformedHistory);
-        }
-      }
-    };
+    // Refresh history when the component mounts
+    refreshHistory();
+  }, []); // Empty dependency array ensures this runs only once on mount
 
-    loadHistory();
-  }, [history, getAnalysisHistory]);
-
-  // Filter history based on current filter and search term
-  const filteredHistory = displayHistory.filter((item: AnalysisHistoryItem) => {
-    console.log('🔍 HistoryPage: Filtering item:', {
-      id: item.id,
-      damageType: item.damageType,
-      confidence: item.confidence,
-      filter
-    });
-    // Apply type filter
-    if (filter !== 'all' && filter !== 'recent') {
-      if (filter === 'severe') {
-        const confidence = item.confidence || 0;
-        if (confidence < 0.7) {
+  const filteredHistory = useMemo(() => {
+    return history.filter((item: AnalysisHistoryItem) => {
+      // Apply type filter
+      if (filter !== 'all' && filter !== 'recent') {
+        if (filter === 'severe') {
+          const confidence = item.confidence || 0;
+          if (confidence < 0.7) {
+            return false;
+          }
+        } else if (!item.damageType?.toLowerCase().includes(filter.toLowerCase())) {
           return false;
         }
-      } else if (!item.damageType?.toLowerCase().includes(filter.toLowerCase())) {
+      }
+
+      // Apply search filter
+      if (searchTerm && !Object.values(item).some(val => 
+        typeof val === 'string' && val.toLowerCase().includes(searchTerm.toLowerCase())
+      )) {
         return false;
       }
+
+      return true;
+    });
+  }, [history, filter, searchTerm]);
+
+  const sortedAndFilteredHistory = useMemo(() => {
+    const sorted = [...filteredHistory];
+    switch (sortOrder) {
+      case 'newest':
+        return sorted.sort((a, b) => new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime());
+      case 'oldest':
+        return sorted.sort((a, b) => new Date(a.analysisDate).getTime() - new Date(b.analysisDate).getTime());
+      case 'confidence':
+        return sorted.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+      default:
+        return sorted;
     }
+  }, [filteredHistory, sortOrder]);
 
-    // Apply search filter
-    if (searchTerm && !Object.values(item).some(val => 
-      typeof val === 'string' && val.toLowerCase().includes(searchTerm.toLowerCase())
-    )) {
-      return false;
-    }
-
-    return true;
-  });
-
-  // For 'recent' filter, sort by date but keep all items
-  const sortedFilteredHistory = filter === 'recent' 
-    ? [...filteredHistory].sort((a, b) => 
-        new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime()
-      )
-    : filteredHistory;
-
-  // Get counts for each damage type for the filter badges
-  const getCounts = () => {
+  const counts = useMemo(() => {
     const counts = {
-      all: displayHistory.length,
+      all: history.length,
       dent: 0,
       scratch: 0,
       glass: 0,
       severe: 0,
-      recent: displayHistory.length
     };
     
-    displayHistory.forEach(item => {
+    history.forEach(item => {
       const damageType = item.damageType?.toLowerCase();
       if (damageType?.includes('dent')) counts.dent++;
       if (damageType?.includes('scratch')) counts.scratch++;
@@ -132,8 +73,7 @@ const HistoryPage: React.FC = () => {
     });
     
     return counts;
-  };
-  const counts = getCounts();
+  }, [history]);
 
   // Filter Button Component
   const FilterButton: React.FC<{
@@ -235,18 +175,8 @@ const HistoryPage: React.FC = () => {
                 </select>
                 <select 
                   className="px-4 py-2 border border-rose-200 rounded-lg focus:ring-2 focus:ring-emerald-200 focus:border-emerald-200"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const sortedHistory = [...filteredHistory];
-                    
-                    if (value === "newest") {
-                      sortedHistory.sort((a, b) => new Date(b.analysisDate).getTime() - new Date(a.analysisDate).getTime());
-                    } else if (value === "oldest") {
-                      sortedHistory.sort((a, b) => new Date(a.analysisDate).getTime() - new Date(b.analysisDate).getTime());
-                    } else if (value === "confidence") {
-                      sortedHistory.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-                    }
-                  }}
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as SortOrder)}
                 >
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -255,20 +185,43 @@ const HistoryPage: React.FC = () => {
               </div>
             </div>
           </div>{/* History Content */}
-          <div className="animate-fadeInUp animation-delay-300">
-            <ImageHistory history={sortedFilteredHistory.map(item => ({
-              ...item,
-              image: item.imageUrl || (item as any).image,
-              uploadedAt: item.analysisDate || (item as any).uploadedAt,
-              timestamp: item.analysisDate || (item as any).timestamp,
-              result: (item as any).result || {
-                damageType: item.damageType,
-                confidence: item.confidence || 0.8,
-                description: item.damageDescription || item.description || 'No description available',
-                recommendations: item.recommendations || []
-              }
-            }))} />
-          </div>
+          {loadingHistory && (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading History...</p>
+            </div>
+          )}
+
+          {errorHistory && (
+            <div className="text-center py-12 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-600 font-semibold">An Error Occurred</p>
+              <p className="text-gray-600 mt-2">{errorHistory}</p>
+              <button 
+                onClick={() => refreshHistory()} 
+                className="mt-4 px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {!loadingHistory && !errorHistory && (
+            <div className="animate-fadeInUp animation-delay-300">
+              <ImageHistory history={sortedAndFilteredHistory.map(item => ({
+                ...item,
+                image: item.imageUrl,
+                uploadedAt: item.analysisDate,
+                timestamp: item.analysisDate,
+                result: {
+                  damageType: item.damageType,
+                  confidence: item.confidence,
+                  damageDescription: item.damageDescription, // Corrected property name
+                  description: item.damageDescription, // Keep description for safety, but damageDescription is what ImageHistory expects
+                  recommendations: item.recommendations
+                }
+              }))} />
+            </div>
+          )}
         </div>
       </div>
     </div>

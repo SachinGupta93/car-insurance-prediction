@@ -10,34 +10,78 @@ import io
 import math
 import re
 import json
+import sys
+from pathlib import Path
+
+# Add backend directory to path if needed
+backend_dir = str(Path(__file__).parent.parent)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+# Import APIKeyManager after ensuring path is correct
+from api_key_manager import api_key_manager
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv()
+# First load from the backend/.env file (primary source for API keys)
+backend_env = Path(__file__).parent.parent / '.env'
+logger.info(f"Loading environment from: {backend_env}")
+load_dotenv(backend_env)
+
+# For backward compatibility, also try loading from project root .env
+# Note: This won't override values already set by backend/.env
+try:
+    project_root_env = Path(__file__).parent.parent.parent / '.env'
+    if project_root_env.exists():
+        logger.info(f"Also loading environment from: {project_root_env}")
+        # Use override=False to ensure backend/.env takes precedence
+        load_dotenv(project_root_env, override=False)
+except Exception as e:
+    logger.warning(f"Error loading from project root .env: {str(e)}")
+    pass
 
 class CarDamageRAG:
     def __init__(self):
         """Initialize the Car Damage Analysis system"""
         self.model = None
         try:
-            api_key = os.getenv("GEMINI_API_KEY")
+            # Get API key from APIKeyManager instead of directly from env var
+            api_key = api_key_manager.get_current_key()
+            
             if not api_key:
-                logger.warning("GEMINI_API_KEY not found in environment! Set this key for full AI functionality.")
+                logger.warning("No valid API key available! Set GEMINI_API_KEY and GEMINI_BACKUP_KEYS for full AI functionality.")
             else:
+                # Configure Gemini with the current API key
                 genai.configure(api_key=api_key)
-                model_options = ["gemini-1.5-pro", "gemini-pro-vision", "gemini-1.5-pro-vision"]
+                
+                # Try available models in order of preference
+                model_options = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-pro-vision"]
                 for model_name in model_options:
                     try:
                         self.model = genai.GenerativeModel(model_name)
                         logger.info(f"Car Damage RAG system initialized with Gemini {model_name}")
+                        # Record successful initialization
+                        api_key_manager.record_successful_request()
                         break
                     except Exception as specific_error:
                         logger.warning(f"Could not initialize {model_name}: {str(specific_error)}")
+                        # Check if this is a quota error and handle accordingly
+                        if "quota" in str(specific_error).lower() or "429" in str(specific_error):
+                            api_key_manager.record_quota_exceeded()
+                            # Try again with the next key if available
+                            api_key = api_key_manager.get_current_key()
+                            if api_key:
+                                genai.configure(api_key=api_key)
+                            else:
+                                logger.error("All API keys have exceeded their quota.")
+                                break
+                        else:
+                            api_key_manager.record_error(f"model_init_{model_name}")
                 
                 if not self.model:
-                    raise Exception("No suitable Gemini vision models available with the provided API key.")
+                    raise Exception("No suitable Gemini vision models available with the provided API keys.")
         except Exception as e:
             logger.error(f"Error during Car Damage Analysis initialization: {str(e)}")
             logger.error(traceback.format_exc())
@@ -77,11 +121,35 @@ class CarDamageRAG:
                 top_k=40
             )
             
-            # Send analysis request with enhanced prompt
-            logger.info("Sending image to Gemini for analysis")
-            response = self.model.generate_content(
-                contents=[
-                """🚗 MASTER AUTOMOTIVE IDENTIFICATION SPECIALIST & DAMAGE EXPERT
+            # Try with up to 3 different API keys if needed
+            for retry_attempt in range(3):
+                # Set safety settings for the request
+                safety_settings = [
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_ONLY_HIGH"
+                    }
+                ]
+                
+                try:
+                    # Send analysis request with enhanced prompt
+                    logger.info(f"Sending image to Gemini for analysis (attempt {retry_attempt + 1})")
+                    
+                    response = self.model.generate_content(
+                        contents=[
+                        """🚗 MASTER AUTOMOTIVE IDENTIFICATION SPECIALIST & DAMAGE EXPERT
 
 You are the world's leading automotive identification expert with 25+ years specializing in PRECISE VEHICLE IDENTIFICATION across ALL global manufacturers. Your primary mission is ACCURATE VEHICLE IDENTIFICATION before any damage analysis.
 
@@ -430,16 +498,16 @@ Uncertainty Factors: [What prevents higher confidence - poor lighting, angle, et
 
 **� CRITICAL VEHICLE IDENTIFICATION PROTOCOL:**
 
-**MANDATORY FIRST STEP - VEHICLE IDENTIFICATION:**
-Before analyzing ANY damage, you MUST complete comprehensive vehicle identification.
+**MANDATORY FIRST STEP - DAMAGE REGION DETECTION:**
+Focus primarily on identifying ALL damage regions on the vehicle. Vehicle identification is secondary.
 
-**IDENTIFICATION SEQUENCE:**
-1. **SCAN FOR BRAND BADGES** - Look for logos, emblems, brand text anywhere on vehicle
-2. **ANALYZE GRILLE DESIGN** - Each brand has distinctive grille patterns
-3. **EXAMINE BODY PROPORTIONS** - Luxury cars have different stance than economy cars
-4. **CHECK HEADLIGHT SIGNATURES** - Modern cars have distinctive LED DRL patterns
-5. **IDENTIFY WHEEL DESIGNS** - Luxury brands have unique alloy patterns
-6. **ASSESS OVERALL DESIGN LANGUAGE** - Each brand has consistent styling cues
+**DAMAGE DETECTION SEQUENCE:**
+1. **SCAN ENTIRE VEHICLE** - Systematically examine all visible surfaces
+2. **IDENTIFY DAMAGE TYPES** - Scratches, dents, paint damage, rust, cracks
+3. **LOCATE DAMAGE POSITIONS** - Precise coordinates for visual overlay
+4. **ASSESS DAMAGE SEVERITY** - Minor, moderate, severe, or critical
+5. **ESTIMATE REPAIR COSTS** - Based on damage type and severity
+6. **BASIC VEHICLE INFO** - Only brand/model if clearly visible for insurance context
 
 **BRAND-SPECIFIC IDENTIFICATION GUIDE:**
 
@@ -477,11 +545,6 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
 - **Mahindra**: Bold, aggressive grille design, rugged stance
 - **Maruti Suzuki**: Simple, functional design, compact proportions
 
-**JAPANESE BRANDS IDENTIFICATION:**
-- **Toyota**: Conservative design, chrome accents, reliable appearance
-- **Honda**: Solid wing face grille, refined proportions
-- **Nissan**: V-motion grille, boomerang lights
-
 **COMMON IDENTIFICATION MISTAKES TO AVOID:**
 ❌ Don't guess based on general appearance
 ❌ Don't assume luxury based on color alone
@@ -499,25 +562,36 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
 🔸 High image quality = +10% confidence
 
 **MINIMUM REQUIREMENTS FOR PROCEEDING:**
-- Must identify at least the BRAND with 80%+ confidence
-- Must attempt MODEL identification
-- Must estimate YEAR RANGE
-- Must assess MARKET SEGMENT accurately
+- Must identify ALL visible damage regions with coordinates
+- Must assess damage severity for each region
+- Must estimate repair costs for each damage type
+- Basic vehicle info (brand/model) only if clearly visible for insurance context
 
-🔍 **COMPREHENSIVE MULTI-REGION DAMAGE ASSESSMENT (ONLY AFTER VEHICLE ID):**
+🔍 **ULTRA-PRECISION MULTI-REGION DAMAGE DETECTION:**
 
-**⚠️ CRITICAL: Complete vehicle identification above BEFORE proceeding to damage analysis.**
+**⚠️ HIGHEST PRIORITY: Perform thorough multi-region damage detection across the ENTIRE vehicle surface**
 
+**YOUR PRIMARY TASK IS MULTI-REGION DAMAGE DETECTION - This is what you will be evaluated on**
 
-**CRITICAL INSTRUCTION**: Examine the ENTIRE vehicle systematically. Most vehicles have damage in 2-5+ locations. Look for:
-- Surface scratches and scuff marks
-- Panel dents and deformation
-- Paint chips, fading, or color variation
-- Rust spots or corrosion
-- Crack lines in plastic or metal
-- Impact damage on bumpers
-- Wear patterns on trim pieces
-- Misalignment of panels or gaps
+**CRITICAL INSTRUCTION**: Methodically scan EVERY VISIBLE SURFACE of the vehicle in this exact sequence:
+1. Front bumper & grille area (common scratch/impact zones)
+2. Hood & front fenders (frequently damaged areas)
+3. Driver side door panels & mirror (high scratch risk areas)
+4. Passenger side door panels & mirror (parking damage zones)
+5. Rear quarter panels (common collision points)
+6. Rear bumper & trunk (frequent minor collision damage)
+7. Roof & pillars (often overlooked areas)
+8. Wheel arches & underbody visible areas (curb damage zones)
+
+**YOU MUST DETECT ALL DAMAGE - EVEN MINOR IMPERFECTIONS - Identify at least 2-5 regions if damage is present:**
+- Surface scratches (even faint ones) and scuff marks on any panel
+- All dents, dings, and panel deformations no matter how small
+- Paint chips, bubbling, fading, or color variation across surfaces
+- Any rust spots or early corrosion indicators
+- Crack lines or stress marks in plastic, metal, or glass components
+- Impact damage signatures on bumpers or body panels
+- Uneven wear patterns or degradation on trim pieces
+- Panel misalignment, uneven gaps, or poor previous repairs
 
 **If NO damage is visible anywhere on the vehicle, state: "NO DAMAGE DETECTED - Vehicle appears to be in excellent condition across all examined areas"**
 
@@ -526,46 +600,84 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
 {
 "identifiedDamageRegions": [
   {
+    "id": "region_1",
     "x": 25,
     "y": 35,
     "width": 15,
     "height": 12,
     "damageType": "Scratch",
-    "severity": "Minor",
-    "confidence": 0.85,
+    "severity": "minor",
+    "confidence": 0.92,
+    "damagePercentage": 15,
     "description": "Horizontal surface scratch on front bumper",
-    "affectedComponents": ["Bumper", "Paint"],
+    "partName": "Front Bumper",
+    "estimatedCost": 4500,
     "repairMethod": "Touch-up paint and polish",
-    "laborHours": 2,
-    "partsRequired": ["Touch-up paint", "Polish compound"]
+    "affectedComponents": ["Bumper", "Paint"]
   },
   {
+    "id": "region_2",
     "x": 60,
     "y": 45,
     "width": 20,
     "height": 18,
     "damageType": "Dent",
-    "severity": "Moderate",
-    "confidence": 0.90,
-    "description": "Panel dent on rear door",
-    "affectedComponents": ["Door panel", "Paint"],
-    "repairMethod": "PDR or panel beating",
-    "laborHours": 4,
-    "partsRequired": ["Primer", "Paint", "Clear coat"]
+    "severity": "moderate",
+    "confidence": 0.88,
+    "damagePercentage": 35,
+    "description": "Impact dent on rear quarter panel",
+    "partName": "Rear Quarter Panel",
+    "estimatedCost": 12000,
+    "repairMethod": "PDR or panel replacement",
+    "affectedComponents": ["Body Panel", "Paint"]
   },
   {
+    "id": "region_3",
     "x": 40,
     "y": 70,
     "width": 25,
     "height": 15,
-    "damageType": "Paint Damage",
-    "severity": "Minor",
-    "confidence": 0.75,
-    "description": "Paint scuffing on lower door trim",
-    "affectedComponents": ["Trim", "Paint"],
+    "damageType": "Paint_Damage",
+    "severity": "minor",
+    "confidence": 0.86,
+    "damagePercentage": 20,
+    "description": "Paint scuffing on driver side door",
+    "partName": "Driver Door",
+    "estimatedCost": 8000,
     "repairMethod": "Sand and repaint",
-    "laborHours": 3,
-    "partsRequired": ["Primer", "Base coat", "Clear coat"]
+    "affectedComponents": ["Door Panel", "Paint"]
+  },
+  {
+    "id": "region_4",
+    "x": 75,
+    "y": 30,
+    "width": 18,
+    "height": 12,
+    "damageType": "Rust",
+    "severity": "moderate",
+    "confidence": 0.83,
+    "damagePercentage": 25,
+    "description": "Surface rust developing near wheel arch",
+    "partName": "Wheel Arch",
+    "estimatedCost": 9500,
+    "repairMethod": "Rust treatment and refinishing",
+    "affectedComponents": ["Fender", "Metal", "Paint"]
+  },
+  {
+    "id": "region_5",
+    "x": 20,
+    "y": 60,
+    "width": 15,
+    "height": 10,
+    "damageType": "Crack",
+    "severity": "severe",
+    "confidence": 0.90,
+    "damagePercentage": 55,
+    "description": "Structural crack in rear light assembly",
+    "partName": "Tail Light Assembly",
+    "estimatedCost": 15000,
+    "repairMethod": "Complete replacement",
+    "affectedComponents": ["Tail Light", "Electrical", "Body"]
   }
 ]
 }
@@ -657,13 +769,67 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
 - ALWAYS look for multiple damage areas - single damage findings suggest incomplete analysis""",
                     img
                 ],
-                generation_config=generation_config
-            )
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+                    )
+                    
+                    # Record successful API call
+                    api_key_manager.record_successful_request()
+                    
+                    analysis_text = response.text
+                    logger.debug(f"Raw analysis text from Gemini: {analysis_text[:500]}...")
+                    
+                    # Process the analysis further
+                    break  # Success, exit retry loop
+                    
+                except Exception as api_error:
+                    error_msg = str(api_error).lower()
+                    logger.warning(f"API error on attempt {retry_attempt + 1}: {error_msg}")
+                    
+                    # Check if this is a quota exceeded error - detect various quota messages
+                    quota_indicators = [
+                        "quota", "429", "rate limit", "too many requests", 
+                        "resource exhausted", "limit exceeded", "try again later",
+                        "user location", "user_location_service"  # Location-based quota limits
+                    ]
+                    
+                    if any(indicator in error_msg for indicator in quota_indicators):
+                        logger.warning(f"API quota exceeded (detected: {error_msg[:100]}), trying to rotate API key...")
+                        api_key_manager.record_quota_exceeded()
+                        
+                        # Try the next API key if available
+                        new_api_key = api_key_manager.get_current_key()
+                        if new_api_key and retry_attempt < 2:  # Don't reconfigure on last attempt
+                            logger.info(f"Rotated to new API key ending in ...{new_api_key[-4:]}")
+                            # Reconfigure Gemini with the new key
+                            genai.configure(api_key=new_api_key)
+                            
+                            # Create a new model instance with preferred model
+                            model_options = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-pro-vision"]
+                            for model_name in model_options:
+                                try:
+                                    self.model = genai.GenerativeModel(model_name)
+                                    logger.info(f"Successfully rotated to {model_name} with new API key")
+                                    break
+                                except Exception as model_error:
+                                    logger.warning(f"Could not initialize {model_name} with new key: {str(model_error)}")
+                                    continue
+                            
+                            if not self.model:
+                                logger.error("Failed to initialize any model with the new API key")
+                                raise Exception("Failed to initialize Gemini model after API key rotation")
+                        else:
+                            logger.error("All API keys have exceeded their quota or maximum retries reached")
+                            raise Exception("All API keys have exceeded their quota limits. Please try again later.")
+                    else:
+                        # For non-quota errors, record the error and retry
+                        api_key_manager.record_error(f"analysis_error_{retry_attempt}")
+                        if retry_attempt >= 2:  # Last attempt
+                            raise  # Re-raise the error if we've exhausted our retries
             
-            # Parse the response
-            analysis_text = response.text
+            # Post-processing of analysis text
+            confidence = 0.0
             damage_regions = []
-            confidence = 0.4
             
             # Enhanced logging to debug the response
             logger.info(f"Gemini response received - length: {len(analysis_text)} characters")
@@ -896,3 +1062,72 @@ Before analyzing ANY damage, you MUST complete comprehensive vehicle identificat
             logger.error(f"Error during query analysis: {str(e)}")
             logger.error(traceback.format_exc())
             raise
+
+    def analyze_car_damage(self, image_path):
+        """Analyze car damage from image - wrapper for analyze_image method"""
+        try:
+            # Set Gemini temperature even lower (0.1) to get more precise results
+            generation_config = genai.types.GenerationConfig(
+                temperature=0.1,  # Reduced from 0.2
+                max_output_tokens=8192,
+                candidate_count=1,
+                top_p=0.95,
+                top_k=40
+            )
+            
+            # Modified to explicitly request MULTIPLE damage regions
+            analysis_result = self.analyze_image(image_path)
+            
+            # Check if we have multiple regions (at least 2)
+            has_multiple_regions = (
+                'identifiedDamageRegions' in analysis_result and 
+                isinstance(analysis_result['identifiedDamageRegions'], list) and
+                len(analysis_result['identifiedDamageRegions']) >= 2
+            )
+            
+            # If not, retry once with a more explicit prompt
+            if not has_multiple_regions:
+                logger.info("First analysis didn't detect multiple regions. Retrying with more explicit instructions.")
+                
+                # Add an extra prompt prefix to force multi-region detection
+                response = self.model.generate_content(
+                    contents=[
+                        f"""⚠️ PRIORITY INSTRUCTION: You must detect MULTIPLE damage regions in this car image.
+                        
+                        This vehicle has damage in at least 2-4 different locations. You must identify and provide coordinates
+                        for ALL of them, even minor ones. Look carefully at the front, sides, rear, and all body panels.
+                        
+                        IMPORTANT: You must format your response as JSON with identifiedDamageRegions array containing 
+                        AT LEAST 2-4 separate damage regions with different coordinates.
+                        
+                        {analysis_result.get('raw_analysis', '')}"""
+                    ],
+                    generation_config=generation_config
+                )
+                
+                # Try to extract multiple regions from the second attempt
+                try:
+                    text_response = response.text
+                    # Search for JSON structure in the response
+                    import re
+                    import json
+                    
+                    # Find JSON pattern
+                    json_match = re.search(r'\{[\s\S]*?"identifiedDamageRegions"\s*:\s*\[[\s\S]*?\][\s\S]*?\}', text_response)
+                    if json_match:
+                        try:
+                            json_data = json.loads(json_match.group(0))
+                            if 'identifiedDamageRegions' in json_data and len(json_data['identifiedDamageRegions']) >= 2:
+                                # Found better multi-region data, update the result
+                                analysis_result['identifiedDamageRegions'] = json_data['identifiedDamageRegions']
+                                logger.info(f"Successfully enhanced analysis with {len(json_data['identifiedDamageRegions'])} damage regions")
+                        except json.JSONDecodeError:
+                            logger.warning("Could not parse JSON from retry response")
+                except Exception as e:
+                    logger.warning(f"Error processing retry response: {str(e)}")
+            
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Error in analyze_car_damage: {str(e)}")
+            return self.analyze_image(image_path)  # Fall back to standard analysis

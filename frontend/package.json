@@ -1,7 +1,8 @@
 {
   "name": "car-damage-prediction-frontend",
   "version": "0.1.0",
-  "private": true,  "scripts": {
+  "private": true,
+  "scripts": {
     "dev": "vite",
     "build": "vite build",
     "start": "vite preview",
@@ -11,6 +12,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.4",
     "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.12",
     "autoprefixer": "^10.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

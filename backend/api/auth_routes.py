@@ -1,7 +1,7 @@
 ﻿# Authentication routes for the car damage prediction API
 from flask import Blueprint, jsonify, request
 from functools import wraps
-from backend.auth.user_auth import UserAuth
+from auth.user_auth import UserAuth
 from config.firebase_config import verify_firebase_token
 import logging
 import traceback

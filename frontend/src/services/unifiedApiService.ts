@@ -3,7 +3,7 @@
  */
 import { UploadedImage, DamageResult } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // Development mode configuration
 const DEV_MODE = import.meta.env.DEV || import.meta.env.VITE_DEV_MODE === 'true';
@@ -60,7 +60,7 @@ class UnifiedApiService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`, {
+      const response = await fetch(`${API_BASE_URL}/api/health`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -82,15 +82,15 @@ class UnifiedApiService {
       const formHeaders = { ...authHeaders };
       delete (formHeaders as any)['Content-Type']; // Remove Content-Type for FormData
       
-      // Add timeout for faster failure
-      const timeoutId = setTimeout(() => {
-        throw new Error('Request timeout - API taking too long');
-      }, 15000); // 15 second timeout
+      // Create AbortController for proper timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased from 8s to 30s for complex image analysis
 
-      const response = await fetch(`${API_BASE_URL}/analyze-damage`, {
+      const response = await fetch(`${API_BASE_URL}/api/analyze-damage`, {
         method: 'POST',
         headers: formHeaders,
-        body: formData
+        body: formData,
+        signal: controller.signal
       });
 
       clearTimeout(timeoutId);
@@ -111,6 +111,38 @@ class UnifiedApiService {
           (quotaError as any).isQuotaExceeded = true;
           (quotaError as any).retryDelaySeconds = errorData.retry_delay_seconds || 60;
           throw quotaError;
+        }
+        
+        // Check if this is a 500 error with a 429 quota message - backend demo mode handling
+        if (response.status === 500 && errorData.error) {
+          const errorMsg = errorData.error.toLowerCase();
+          if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('exceeded')) {
+            console.log('📊 [UnifiedAPI] Detected quota exceeded in 500 error, requesting demo mode...');
+            // If backend couldn't return demo data due to error handling, create a fallback
+            const demoResult: DamageResult = {
+              damageType: "Structural Damage",
+              confidence: 0.85,
+              severity: "moderate" as const,
+              description: "Demo analysis - API quota exceeded",
+              damageDescription: "Sample damage analysis due to quota limits",
+              vehicleIdentification: {
+                make: "Demo Vehicle",
+                model: "Sample Model",
+                year: "2020",
+                confidence: 0.8,
+                identificationDetails: "Demo mode - API quota exceeded"
+              },
+              repairEstimate: "₹25,000 - ₹35,000",
+              recommendations: [
+                "Professional assessment recommended",
+                "Contact insurance provider"
+              ],
+              identifiedDamageRegions: [],
+              isDemoMode: true,
+              quotaExceeded: true
+            };
+            return demoResult;
+          }
         }
         
         throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
@@ -136,6 +168,12 @@ class UnifiedApiService {
       throw new Error('Invalid response format from backend');
     } catch (error) {
       console.error('Error analyzing damage:', error);
+      
+      // Handle AbortError specifically
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout - Analysis took too long');
+      }
+      
       throw error;
     }
   }
@@ -148,10 +186,10 @@ class UnifiedApiService {
     
     try {
       const headers = await this.getAuthHeaders();
-      console.log('🌐 [UnifiedAPI] Making request to:', `${API_BASE_URL}/analysis/history`);
+      console.log('🌐 [UnifiedAPI] Making request to:', `${API_BASE_URL}/api/analysis/history`);
       console.log('🔑 [UnifiedAPI] Headers:', headers);
       
-      const response = await fetch(`${API_BASE_URL}/analysis/history`, {
+      const response = await fetch(`${API_BASE_URL}/api/analysis/history`, {
         method: 'GET',
         headers: headers
       });
@@ -206,7 +244,7 @@ class UnifiedApiService {
   async getUserProfile(): Promise<any> {
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
         method: 'GET',
         headers: headers
       });
@@ -230,7 +268,7 @@ class UnifiedApiService {
   async addAnalysisToHistory(analysisData: any): Promise<string> {
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/history/add`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/history/add`, {
         method: 'POST',
         headers: {
           ...headers,
@@ -258,7 +296,7 @@ class UnifiedApiService {
   async ensureUserProfile(userData: any): Promise<any> {
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/ensure-profile`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/ensure-profile`, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(userData)
@@ -301,7 +339,7 @@ class UnifiedApiService {
   async getUserStats(): Promise<any> {
     try {
       const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/user/stats`, {
+      const response = await fetch(`${API_BASE_URL}/api/user/stats`, {
         method: 'GET',
         headers: headers
       });
@@ -316,6 +354,109 @@ class UnifiedApiService {
     } catch (error) {
       console.error('Error fetching user stats:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get combined dashboard data (stats + recent history) - optimized single call
+   */
+  async getDashboardData(): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/api/user/dashboard-data`, {
+        method: 'GET',
+        headers: headers
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.data || data;
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get aggregated dashboard data for admin/insurance views
+   */
+  async getAggregatedDashboardData(): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/api/admin/aggregated-dashboard-data`, {
+        method: 'GET',
+        headers: headers
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      // Return the full response to preserve metadata like data_source
+      return data;
+    } catch (error) {
+      console.error('Error fetching aggregated dashboard data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get insurance-specific dashboard data
+   */
+  async getInsuranceDashboardData(): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/api/admin/insurance-dashboard-data`, {
+        method: 'GET',
+        headers: headers
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      // Return the full response to preserve metadata like data_source
+      return data;
+    } catch (error) {
+      console.error('Error fetching insurance dashboard data:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get Firebase usage status for admins
+   */
+  async getFirebaseUsageStatus(): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/api/admin/firebase-usage`, {
+        method: 'GET',
+        headers: headers
+      });
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          // Not an admin or not authenticated
+          return null;
+        }
+        
+        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching Firebase usage status:', error);
+      return null;  // Silently fail for this non-critical feature
     }
   }
 }

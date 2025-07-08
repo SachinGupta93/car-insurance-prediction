@@ -27,8 +27,26 @@ const MultiRegionAnalysisResults: React.FC<MultiRegionAnalysisResultsProps> = ({
   const [viewMode, setViewMode] = useState<'overlay' | 'list'>('overlay');
   const [selectedRegion, setSelectedRegion] = useState<DamageRegion | null>(null);
 
+  // Defensive programming: ensure we have valid data
+  if (!result) {
+    return <div className="text-gray-500 p-4">No analysis result available</div>;
+  }
+
   const regions = result.identifiedDamageRegions || [];
   const regionAnalysis = result.regionAnalysis;
+
+  // If no regions detected, show appropriate message
+  if (regions.length === 0) {
+    return (
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <h3 className="text-lg font-semibold text-blue-800 mb-2">Single Region Analysis</h3>
+        <p className="text-blue-700">
+          This analysis focused on overall damage assessment. For detailed multi-region analysis, 
+          the AI would need to detect multiple distinct damage areas.
+        </p>
+      </div>
+    );
+  }
 
   const getSeverityColor = (severity: string) => {
     const colors: Record<string, string> = {
@@ -56,7 +74,8 @@ const MultiRegionAnalysisResults: React.FC<MultiRegionAnalysisResultsProps> = ({
   };
 
   const totalCost = regions.reduce((sum, region) => sum + (region.estimatedCost || 0), 0);
-  const averageDamage = regions.reduce((sum, region) => sum + region.damagePercentage, 0) / regions.length;
+  const averageDamage = regions.length > 0 ? regions.reduce((sum, region) => sum + (region.damagePercentage || 0), 0) / regions.length : 0;
+  const mostSevereDamage = regions.length > 0 ? regions.reduce((prev, curr) => ((prev.damagePercentage || 0) > (curr.damagePercentage || 0) ? prev : curr)) : null;
 
   return (
     <div className="space-y-6">
@@ -201,10 +220,10 @@ const MultiRegionAnalysisResults: React.FC<MultiRegionAnalysisResultsProps> = ({
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-800 capitalize">
-                        {region.damageType.replace('_', ' ')}
+                        {(region.damageType || 'Unknown').replace('_', ' ')}
                       </h4>
                       <p className="text-sm text-gray-600">
-                        {region.partName?.replace('_', ' ') || 'Unknown Part'}
+                        {(region.partName || 'Unknown Part').replace('_', ' ')}
                       </p>
                     </div>
                   </div>
@@ -273,7 +292,7 @@ const MultiRegionAnalysisResults: React.FC<MultiRegionAnalysisResultsProps> = ({
             <h4 className="font-medium text-gray-700 mb-2">Key Findings:</h4>
             <ul className="text-sm text-gray-600 space-y-1">
               <li>• {regions.length} distinct damage regions identified</li>
-              <li>• Most severe damage: {regions.reduce((prev, curr) => prev.damagePercentage > curr.damagePercentage ? prev : curr).damageType}</li>
+              {mostSevereDamage && <li>• Most severe damage: {(mostSevereDamage.damageType || 'Unknown').replace('_', ' ')}</li>}
               <li>• Average damage level: {averageDamage.toFixed(1)}%</li>
               <li>• Total estimated repair cost: ₹{totalCost.toLocaleString()}</li>
             </ul>

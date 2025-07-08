@@ -7,11 +7,10 @@ from flask_cors import CORS
 import logging
 import traceback
 from datetime import datetime
-from backend.config.firebase_config import initialize_firebase, verify_firebase_token, get_firebase_config
-from backend.api.routes import api # Changed api_bp to api
-from backend.api.admin_routes import admin_bp  # Add admin routes
+from config.firebase_config import initialize_firebase, verify_firebase_token, get_firebase_config
+from api.routes import api # Changed api_bp to api
+from api.admin_routes import admin_bp  # Add admin routes
 from dotenv import load_dotenv
-from backend.rate_limiter import global_rate_limiter
 
 # Load environment variables
 load_dotenv()
@@ -33,19 +32,20 @@ def create_app():
     os.environ['DEV_MODE'] = 'true'
     os.environ['FLASK_ENV'] = 'development'
     
-    # CORS configuration with more permissive settings for development
+    # CORS configuration for real deployment
     CORS(app, 
-         resources={r"/*": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",
-                                          "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175"],
+         resources={r"/*": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5500",
+                                          "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175", "http://127.0.0.1:5500"],
                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                               "allow_headers": ["Content-Type", "Authorization", "Accept", "X-Dev-Mode", "X-Dev-Auth-Bypass"]}},
+                               "allow_headers": ["Content-Type", "Authorization", "Accept", "X-API-Key", "X-Dev-Mode", "X-Dev-Auth-Bypass"]}},
          supports_credentials=True)
     
-    # Log CORS configuration
-    logger.info("🌐 CORS Configuration:")
-    logger.info(f"  - Allowed origins: Frontend ports 3000, 5173, 5174, 5175")
-    logger.info(f"  - Allowed methods: GET, POST, PUT, DELETE, OPTIONS") 
-    logger.info(f"  - Allowed headers: Content-Type, Authorization, Accept, X-Dev-Mode, X-Dev-Auth-Bypass")
+    # Ensure real AI mode is enforced
+    force_real_ai = os.environ.get('FORCE_REAL_AI', 'false').lower() == 'true'
+    if force_real_ai:
+        logger.info("🤖 REAL AI MODE ENFORCED - No demo fallbacks")
+    else:
+        logger.warning("⚠️ Real AI mode not enforced - check FORCE_REAL_AI setting")
 
     # Initialize Firebase Admin SDK with better error reporting
     dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
@@ -214,11 +214,21 @@ def create_app():
 
     # Register API blueprint
     app.register_blueprint(api, url_prefix='/api') # Changed api_bp to api
+    logger.info("✅ Main API blueprint registered")
     
-    # Register admin blueprint (dev mode only)
-    if dev_mode:
+    # Register admin blueprint (always in development)
+    try:
         app.register_blueprint(admin_bp, url_prefix='/api')
-        logger.info("✅ Admin routes registered for development mode")
+        logger.info("✅ Admin routes registered successfully")
+        
+        # Log all registered routes for debugging
+        for rule in app.url_map.iter_rules():
+            if 'admin' in rule.rule:
+                logger.info(f"📍 Admin route registered: {rule.rule} -> {rule.endpoint}")
+                
+    except Exception as e:
+        logger.error(f"❌ Failed to register admin routes: {e}")
+        logger.error(traceback.format_exc())
 
     # Root endpoint for health check
     @app.route('/')
@@ -264,23 +274,28 @@ app = create_app()
 
 if __name__ == '__main__':
     try:
-        # Force debug mode for development
-        os.environ['FLASK_ENV'] = 'development'
-        os.environ['FLASK_DEBUG'] = '1'
-        
         # Load port from environment variable, default to 8000
         port = int(os.environ.get('PORT', 8000))
+        
+        # Determine if we're in development
+        dev_mode = os.environ.get('DEV_MODE') == 'true' or os.environ.get('FLASK_ENV') == 'development'
         
         # Create and configure the app
         app = create_app()
         
         # Log startup information
         logger.info(f"Starting Flask server on http://127.0.0.1:{port}")
-        logger.info(f"Debug mode: {app.debug}")
-        logger.info(f"Environment: {os.environ.get('FLASK_ENV', 'development')}")
+        logger.info(f"Development mode: {dev_mode}")
+        logger.info(f"Environment: {os.environ.get('FLASK_ENV', 'production')}")
         
-        # Run the app on all interfaces (0.0.0.0) to be accessible from other devices if needed
-        app.run(host='0.0.0.0', port=port, debug=True)
+        # Run with optimized settings - disable debug mode to prevent continuous iteration
+        app.run(
+            host='0.0.0.0', 
+            port=port, 
+            debug=False,  # Disable debug mode to stop file watching/continuous iteration
+            use_reloader=False,  # Disable auto-reloader
+            threaded=True  # Enable threading for better performance
+        )
     except Exception as e:
         logger.critical(f"Failed to start server: {str(e)}")
         logger.critical(traceback.format_exc())

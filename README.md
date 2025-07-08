@@ -7,6 +7,8 @@ A comprehensive web application that leverages Google's Gemini AI to analyze car
 ### Prerequisites
 - Node.js 18+ and npm
 - Python 3.8+
+- Python libraries: Flask, dotenv, Pillow, google-generativeai
+- Gemini API key(s) - [Get yours here](https://makersuite.google.com/app/apikey)
 - Firebase project (optional for dev mode)
 
 ### Quick Setup
@@ -30,7 +32,11 @@ VITE_BYPASS_AUTH_IN_DEV=true
 VITE_BYPASS_QUOTA_IN_DEV=true
 VITE_INSTANT_DEV_RESPONSES=true
 
-# 5. Start both servers
+# 5. Configure Gemini API keys (in backend/.env)
+GEMINI_API_KEY=your_primary_api_key
+GEMINI_BACKUP_KEYS=backup_key1,backup_key2,backup_key3
+
+# 6. Start both servers
 # Terminal 1: Backend
 cd backend && python main.py
 
@@ -43,8 +49,27 @@ cd frontend && npm run dev
 - 🔓 **Authentication bypass** (no login required)
 - 📊 **Realistic test data** (perfect for UI testing)
 - 🚫 **No quota limits** (unlimited testing)
+- 🤖 **Real AI analysis** with demo fallback
 
 👉 **See [DEVELOPMENT_MODE_GUIDE.md](./DEVELOPMENT_MODE_GUIDE.md) for detailed configuration**
+
+### 🔑 API Key Management
+
+The application includes an automatic API key rotation system to handle Gemini API quota limitations:
+
+1. **Multiple API Keys**: Configure a primary key and multiple backup keys in `backend/.env`:
+   ```
+   GEMINI_API_KEY=your_primary_key
+   GEMINI_BACKUP_KEYS=backup_key1,backup_key2,backup_key3
+   ```
+
+2. **Automatic Rotation**: When a key exceeds its quota, the system automatically rotates to the next available key.
+
+3. **Quota Tracking**: The system tracks quota status for each key and attempts to reuse keys after a cooling-off period.
+
+4. **Graceful Fallback**: If all keys are exhausted, the system falls back to demo mode with realistic sample data.
+
+5. **Testing**: Run `python test_api_key_rotation.py` to verify key rotation functionality.
 
 ## ✨ Features
 

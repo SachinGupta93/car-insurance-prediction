@@ -8,8 +8,24 @@ import time
 import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+from pathlib import Path
 
+# Load environment variables from backend/.env (primary source)
+backend_env = Path(__file__).parent / '.env'
 logger = logging.getLogger(__name__)
+logger.info(f"APIKeyManager: Loading environment from: {backend_env}")
+load_dotenv(backend_env)
+
+# Also try project root .env as fallback, but don't override backend/.env values
+try:
+    project_root_env = Path(__file__).parent.parent / '.env'
+    if project_root_env.exists():
+        logger.info(f"APIKeyManager: Also checking environment from: {project_root_env}")
+        load_dotenv(project_root_env, override=False)
+except Exception as e:
+    logger.warning(f"APIKeyManager: Error loading from project root .env: {str(e)}")
+    pass
 
 class APIKeyManager:
     def __init__(self):
