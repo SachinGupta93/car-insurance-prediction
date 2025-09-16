@@ -89,7 +89,13 @@ const InsuranceDashboard: React.FC = () => {
     }
 
     try {
+      console.log('📡 Insurance Dashboard: Calling admin API...');
       const response = await unifiedApiService.getInsuranceDashboardData();
+      console.log('🔍 Insurance Dashboard: Full API response:', response);
+      console.log('🔍 Insurance Dashboard: Dashboard data:', response.data);
+      console.log('🔍 Insurance Dashboard: Data source:', response.data_source);
+      console.log('🔍 Insurance Dashboard: Message:', response.message);
+      
       setDashboardData(response.data);
       setDataSource(response.data_source || 'unknown');
       setDataMessage(response.message || '');

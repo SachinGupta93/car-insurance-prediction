@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { useFirebaseAuth } from '../../context/FirebaseAuthContext';
 import { unifiedApiService } from '../../services/unifiedApiService';
-import { UploadedImage } from '../../types';
 import { networkManager } from '../../utils/networkManager';
 import AnalysisChart from '../charts/AnalysisChart';
 
@@ -34,7 +33,6 @@ interface DashboardData {
   monthlyTrends: Array<{ month: string; count: number; avgCost: number }>;
   severityBreakdown: Record<string, number>;
   damageTypeDistribution: Record<string, any>;
-  recentAnalyses: UploadedImage[];
 }
 
 // Stat card component
@@ -84,25 +82,54 @@ const NewDashboard: React.FC = () => {
   }, []);
 
   const loadDashboardData = useCallback(async (forceRefresh = false) => {
+    console.log('🚀 Dashboard: loadDashboardData called', { firebaseUser: !!firebaseUser, forceRefresh });
+    
     if (!firebaseUser) {
+      console.log('❌ Dashboard: No firebase user, exiting');
       setLoading(false);
       return;
     }
 
     if (forceRefresh || !hasLoadedDataRef.current) {
+      console.log('🔄 Dashboard: Setting loading state');
       setLoading(true);
       setError(null);
     }
 
     try {
+      console.log('📡 Dashboard: Calling admin API...');
       const response = await unifiedApiService.getAggregatedDashboardData();
+      console.log('🔍 Dashboard: Full API response:', response);
+      console.log('🔍 Dashboard: Dashboard data:', response.data);
+      console.log('🔍 Dashboard: Data source:', response.data_source);
+      console.log('🔍 Dashboard: Message:', response.message);
+      
+      // Check specific data fields
+      if (response.data) {
+        console.log('📊 Dashboard: Data fields check:', {
+          monthlyTrends: response.data.monthlyTrends,
+          severityBreakdown: response.data.severityBreakdown,
+          damageTypeDistribution: response.data.damageTypeDistribution
+        });
+        
+        // Debug chart data specifically
+        console.log('🔍 Dashboard: Chart data debug:', {
+          severityBreakdownExists: !!response.data.severityBreakdown,
+          severityBreakdownType: typeof response.data.severityBreakdown,
+          severityBreakdownKeys: response.data.severityBreakdown ? Object.keys(response.data.severityBreakdown) : [],
+          damageTypeDistributionExists: !!response.data.damageTypeDistribution,
+          damageTypeDistributionType: typeof response.data.damageTypeDistribution,
+          damageTypeDistributionKeys: response.data.damageTypeDistribution ? Object.keys(response.data.damageTypeDistribution) : []
+        });
+      }
+      
       setDashboardData(response.data);
       setDataSource(response.data_source || 'unknown');
       setDataMessage(response.message || '');
       hasLoadedDataRef.current = true;
     } catch (err) {
+      console.error('❌ Dashboard loading error:', err);
       setError('Failed to load dashboard data. Please try again later.');
-      console.error('Dashboard loading error:', err);
     } finally {
       setLoading(false);
     }
@@ -289,57 +316,7 @@ const NewDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Recent Analyses Table */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold text-gray-800">Recent Analyses</h3>
-            <Link to="/history" className="text-blue-600 hover:underline">View All</Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="py-3 px-4 text-sm font-medium text-gray-500">Date</th>
-                  <th className="py-3 px-4 text-sm font-medium text-gray-500">Vehicle</th>
-                  <th className="py-3 px-4 text-sm font-medium text-gray-500">Damage Type</th>
-                  <th className="py-3 px-4 text-sm font-medium text-gray-500">Severity</th>
-                  <th className="py-3 px-4 text-sm font-medium text-gray-500"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboardData?.recentAnalyses && Array.isArray(dashboardData.recentAnalyses) && dashboardData.recentAnalyses.length > 0 ? (
-                  dashboardData.recentAnalyses.slice(0, 5).map((analysis) => (
-                    <tr key={analysis.id} className="border-b border-gray-200 hover:bg-gray-50">
-                      <td className="py-3 px-4 text-sm text-gray-600">{new Date(analysis.uploadedAt).toLocaleDateString()}</td>
-                      <td className="py-3 px-4 text-sm text-gray-800 font-medium">{analysis.result?.vehicleIdentification?.make} {analysis.result?.vehicleIdentification?.model}</td>
-                      <td className="py-3 px-4 text-sm text-gray-600">{analysis.result?.damageType}</td>
-                      <td className="py-3 px-4">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        analysis.result?.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                        analysis.result?.severity === 'severe' ? 'bg-orange-100 text-orange-800' :
-                        analysis.result?.severity === 'moderate' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
-                      }`}>
-                        {analysis.result?.severity}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <Link to={`/analysis/${analysis.id}`} className="text-blue-600 hover:underline">
-                        Details
-                      </Link>
-                    </td>
-                  </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="py-8 px-4 text-center text-gray-500">
-                      No recent analyses available
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+
       </div>
     </div>
   );

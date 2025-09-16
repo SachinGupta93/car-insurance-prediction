@@ -32,10 +32,11 @@ def create_app():
     os.environ['DEV_MODE'] = 'true'
     os.environ['FLASK_ENV'] = 'development'
     
-    # CORS configuration for real deployment
+    # CORS configuration for development - more permissive
     CORS(app, 
          resources={r"/*": {"origins": ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5500",
-                                          "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175", "http://127.0.0.1:5500"],
+                                          "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175", "http://127.0.0.1:5500",
+                                          "http://localhost:8080", "http://127.0.0.1:8080"],
                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                                "allow_headers": ["Content-Type", "Authorization", "Accept", "X-API-Key", "X-Dev-Mode", "X-Dev-Auth-Bypass"]}},
          supports_credentials=True)
@@ -255,10 +256,17 @@ def create_app():
         logger.info(f'🌐 Request: {request.method} {request.path}')
         logger.info(f'🔍 Origin: {request.headers.get("Origin", "Unknown")}')
         logger.info(f'🔑 Authorization: {"Present" if request.headers.get("Authorization") else "Missing"}')
+        logger.info(f'🏠 Remote Address: {request.remote_addr}')
         if request.method != 'OPTIONS':  # Don't log OPTIONS requests
             logger.debug(f'📋 Headers: {dict(request.headers)}')
             if request.data:
                 logger.debug(f'📦 Request Data: {request.data[:200]}...' if len(request.data) > 200 else f'📦 Request Data: {request.data}')
+    
+    # Add after_request handler to log responses
+    @app.after_request
+    def log_response_info(response):
+        logger.info(f'📤 Response: {response.status_code} for {request.method} {request.path}')
+        return response
 
     # Global error handler
     @app.errorhandler(Exception)

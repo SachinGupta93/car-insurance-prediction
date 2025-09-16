@@ -592,10 +592,6 @@ export default function AnalysisChart({
         }
       }
       return <div className="text-center p-4 text-gray-600">Time-series data is not in the expected format for trends.</div>;
-    case 'coverage-breakdown':
-      return renderCoverageBreakdownPieChart();
-    case 'claim-status':
-      return renderClaimStatusPieChart();
     default:
       // Default rendering logic based on inferred structure of chartData
       if (Array.isArray(chartData) && chartData.length > 0) {

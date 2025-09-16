@@ -11,10 +11,12 @@
     },
     
     "users": {
+      ".read": "auth != null && auth.token.email == 'deekshagupta6302@gmail.com'",
+      
       "$uid": {
 
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid",
+        ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'deekshagupta6302@gmail.com')",
+        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'deekshagupta6302@gmail.com')",
         
         "analysisHistory": {
           ".read": "auth != null && auth.uid == $uid",
