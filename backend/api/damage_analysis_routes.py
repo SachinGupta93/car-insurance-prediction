@@ -104,18 +104,42 @@ def _build_regions_dynamic(image_path: str):
 def _generate_vehicle_info(seed: int):
     """Generate deterministic vehicle info from seed"""
     rng = random.Random(seed)
-    makes_models = [
-        ("Toyota", ["Corolla", "Camry", "Innova", "Fortuner"]),
-        ("Honda", ["City", "Civic", "Amaze", "CR-V"]),
-        ("Maruti", ["Swift", "Baleno", "Dzire", "Ertiga"]),
-        ("Hyundai", ["i20", "Creta", "Verna", "Venue"]),
-        ("Tata", ["Nexon", "Harrier", "Safari", "Altroz"]),
-        ("Mahindra", ["XUV700", "Scorpio", "Thar", "Bolero"]),
+    makes_models_data = [
+        ("Toyota", ["Corolla", "Camry", "Innova", "Fortuner"], ["Sedan", "Sedan", "MPV", "SUV"]),
+        ("Honda", ["City", "Civic", "Amaze", "CR-V"], ["Sedan", "Sedan", "Sedan", "SUV"]),
+        ("Maruti", ["Swift", "Baleno", "Dzire", "Ertiga"], ["Hatchback", "Hatchback", "Sedan", "MPV"]),
+        ("Hyundai", ["i20", "Creta", "Verna", "Venue"], ["Hatchback", "SUV", "Sedan", "SUV"]),
+        ("Tata", ["Nexon", "Harrier", "Safari", "Altroz"], ["SUV", "SUV", "SUV", "Hatchback"]),
+        ("Mahindra", ["XUV700", "Scorpio", "Thar", "Bolero"], ["SUV", "SUV", "SUV", "SUV"]),
     ]
-    make, models = rng.choice(makes_models)
-    model = rng.choice(models)
+    make, models, body_types = rng.choice(makes_models_data)
+    idx = rng.randint(0, len(models) - 1)
+    model = models[idx]
+    body_style = body_types[idx]
     year = str(rng.randint(2018, 2024))
-    return {"make": make, "model": model, "year": year, "confidence": round(rng.uniform(0.35, 0.55), 2)}
+    
+    # Generate trim level
+    trims = ["Base", "Mid", "Top", "VX", "ZX", "SX", "LX", "EX"]
+    trim_level = rng.choice(trims)
+    
+    # Market segment based on body style
+    segment_map = {
+        "Sedan": "Mid-size Sedan",
+        "Hatchback": "Compact Hatchback",
+        "SUV": "Compact SUV",
+        "MPV": "Multi-Purpose Vehicle"
+    }
+    market_segment = segment_map.get(body_style, "Standard")
+    
+    return {
+        "make": make,
+        "model": model,
+        "year": year,
+        "trimLevel": trim_level,
+        "bodyStyle": body_style,
+        "marketSegment": market_segment,
+        "confidence": round(rng.uniform(0.35, 0.55), 2)
+    }
 
 def _make_structured_from_regions(regions, image_seed=None):
     vehicle_info = _generate_vehicle_info(image_seed or int(datetime.now().timestamp()))

@@ -124,17 +124,19 @@ const DetailedGeminiAnalysisModal: React.FC<DetailedGeminiAnalysisModalProps> = 
     const basic = (analysisResult as any).vehicleIdentification || (analysisResult as any).vehicleInformation;
     const mandatory = (analysisResult as any).mandatoryOutput?.vehicleInformation;
     
+    const filterUnknown = (value: any) => value && value !== 'Unknown' ? value : undefined;
+    
     return {
-      make: basic?.make || mandatory?.make || 'Unknown',
-      model: basic?.model || mandatory?.model || 'Unknown', 
-      year: basic?.year || basic?.estimatedYear || mandatory?.estimatedYear || 'Unknown',
-      trim: basic?.trimLevel || 'Unknown',
-      trimLevel: basic?.trimLevel || 'Unknown',
-      bodyStyle: basic?.bodyStyle || mandatory?.marketSegment || 'Unknown',
-      category: basic?.bodyStyle || mandatory?.marketSegment || 'Unknown',
-      bodyType: basic?.bodyStyle || mandatory?.marketSegment || 'Unknown',
-      confidence: basic?.confidence || 0.6,
-      marketSegment: basic?.marketSegment || mandatory?.marketSegment || 'Unknown',
+      make: filterUnknown(basic?.make || mandatory?.make),
+      model: filterUnknown(basic?.model || mandatory?.model), 
+      year: filterUnknown(basic?.year || basic?.estimatedYear || mandatory?.estimatedYear),
+      trim: filterUnknown(basic?.trimLevel),
+      trimLevel: filterUnknown(basic?.trimLevel),
+      bodyStyle: filterUnknown(basic?.bodyStyle || mandatory?.bodyStyle),
+      category: filterUnknown(basic?.bodyStyle || basic?.marketSegment || mandatory?.marketSegment),
+      bodyType: filterUnknown(basic?.bodyStyle || mandatory?.bodyStyle),
+      confidence: basic?.confidence || 0.4,
+      marketSegment: filterUnknown(basic?.marketSegment || mandatory?.marketSegment),
       estimatedValue: mandatory?.estimatedValue || 0
     };
   }, [analysisResult]);
