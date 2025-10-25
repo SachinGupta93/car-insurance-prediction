@@ -52,8 +52,11 @@ const DetailedGeminiAnalysisModal: React.FC<DetailedGeminiAnalysisModalProps> = 
              region.damageClassification?.affectedPercentage || 0,
       severity: region.severity || 
                region.damageClassification?.severity || 'unknown',
-      confidence: ((region.confidence || 
-                   region.damageClassification?.confidence || 0) * 100),
+      confidence: (() => {
+        const conf = region.confidence || region.damageClassification?.confidence || 0;
+        // Handle both decimal (0.73) and percentage (73) formats
+        return conf > 1 ? conf : conf * 100;
+      })(),
       cost: region.estimatedCost || 
            region.costEstimation?.totalCost || 0
     }));
@@ -87,13 +90,16 @@ const DetailedGeminiAnalysisModal: React.FC<DetailedGeminiAnalysisModalProps> = 
       ].filter(item => item.value > 0);
     }
 
-    // If we only have top-level estimatedCost on regions, show single slice
+    // If we only have top-level estimatedCost on regions, try to split into parts/labor
     if (regionsTop.length > 0) {
       const total = regionsTop.reduce((sum: number, r: any) => sum + (toNumber(r.estimatedCost) || 0), 0);
       if (total > 0) {
+        // Estimate breakdown: 60% parts, 35% labor, 5% materials
         return [
-          { name: 'Estimated Total', value: total, color: '#00C49F' }
-        ];
+          { name: 'Parts', value: Math.round(total * 0.6), color: '#0088FE' },
+          { name: 'Labor', value: Math.round(total * 0.35), color: '#00C49F' },
+          { name: 'Materials', value: Math.round(total * 0.05), color: '#FFBB28' }
+        ].filter(item => item.value > 0);
       }
     }
     
@@ -453,7 +459,7 @@ const DetailedGeminiAnalysisModal: React.FC<DetailedGeminiAnalysisModalProps> = 
                             cx="50%"
                             cy="50%"
                             labelLine={false}
-                            label={({ name, value }) => `${name}: ${value}%`}
+                            label={({ name, damage }) => `${name}: ${damage}%`}
                             outerRadius={80}
                             fill="#8884d8"
                             dataKey="damage"

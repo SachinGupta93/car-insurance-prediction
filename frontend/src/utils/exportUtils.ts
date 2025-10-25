@@ -69,7 +69,7 @@ const loadExternalLibraries = async (): Promise<{ jsPDF: any; XLSX: any }> => {
   }
 
   return {
-    jsPDF: window.jsPDF,
+    jsPDF: (window as any).jspdf?.jsPDF || window.jsPDF,
     XLSX: window.XLSX
   };
 };
