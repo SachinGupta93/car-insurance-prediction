@@ -21,16 +21,27 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           router: ['react-router-dom'],
           charts: ['recharts'],
-          icons: ['lucide-react'],
-          firebase: ['firebase']
+          icons: ['lucide-react']
         }
       }
     },
     sourcemap: false,
-    minify: 'terser',
+    minify: 'esbuild',
     chunkSizeWarningLimit: 1000
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom', 'recharts', 'lucide-react']
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      'recharts',
+      'lucide-react',
+      'firebase/app',
+      'firebase/auth',
+      'firebase/firestore',
+      'firebase/database',
+      'firebase/storage',
+      'firebase/analytics'
+    ]
   }
 })

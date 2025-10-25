@@ -211,25 +211,23 @@ const NewDashboard: React.FC = () => {
         {/* Data Source Indicator */}
         {dataSource && (
           <div className={`mb-6 p-4 rounded-lg border ${
-            dataSource === 'real' 
-              ? 'bg-green-50 border-green-200 text-green-800' 
-              : dataSource === 'sample' 
-              ? 'bg-blue-50 border-blue-200 text-blue-800'
-              : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+            dataSource === 'real'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : dataSource === 'empty'
+              ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+              : 'bg-gray-50 border-gray-200 text-gray-800'
           }`}>
             <div className="flex items-center gap-2">
               {dataSource === 'real' ? (
                 <CheckCircle className="w-5 h-5" />
-              ) : dataSource === 'sample' ? (
-                <BarChart2 className="w-5 h-5" />
               ) : (
                 <AlertCircle className="w-5 h-5" />
               )}
               <span className="font-medium">
-                {dataSource === 'real' ? 'Real Data' : dataSource === 'sample' ? 'Sample Data' : 'Fallback Data'}
+                {dataSource === 'real' ? 'Real Data' : dataSource === 'empty' ? 'No Data Available' : 'Unknown Data Source'}
               </span>
               <span className="text-sm opacity-75">
-                {dataMessage || (dataSource === 'real' ? 'Live data from Firebase' : 'Sample data for demonstration')}
+                {dataMessage || (dataSource === 'real' ? 'Live data from Firebase' : 'No data available')}
               </span>
             </div>
           </div>

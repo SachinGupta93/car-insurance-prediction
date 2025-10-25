@@ -2,17 +2,29 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Loader2, AlertTriangle, Download, Printer, FileText, Eye, Upload } from 'lucide-react';
 import { DamageResult, DamageRegion } from '@/types'; // Ensure DamageRegion is imported
 import { VehicleIdentificationCard } from './VehicleIdentificationCard';
 import { RepairCostCard } from './RepairCostCard';
 import { InsuranceRecommendationsCard } from './InsuranceRecommendationsCard';
 import { VehicleInsuranceAdviceCard } from './VehicleInsuranceAdviceCard';
+import { VerdictBanner } from './VerdictBanner';
+import { VehicleInfoCard } from './VehicleInfoCard';
+import { CostSummaryCard } from './CostSummaryCard';
+import { InsuranceRecommendationCard } from './InsuranceRecommendationCard';
+import DetailedGeminiAnalysisModal from './DetailedGeminiAnalysisModal';
+import PrintFriendlyReport from './PrintFriendlyReport';
 import AnalysisVisualization from '../AnalysisVisualization';
 import MultiRegionAnalysisResults from '../analysis/MultiRegionAnalysisResults';
 
-// Import the AI-powered analysis function
+// Import utilities
 import { analyzeCarDamageWithAI } from '../../utils/api/damageAnalysisApi';
+import { useHEICConversion } from '../../utils/heicConverter';
+import { exportToPDF, exportToExcel, exportToJSON, printReport } from '../../utils/exportUtils';
+import { insuranceApi } from '../../utils/insuranceApi';
+// import { getVehicleValuation } from '../../utils/vehicleValueApi';
 interface DamageAnalyzerProps {
   imageFile: File | null;
   onBack: () => void;
@@ -36,7 +48,14 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [showGeminiAnalysis, setShowGeminiAnalysis] = useState<boolean>(true);
+  const [showPrintView, setShowPrintView] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportType, setExportType] = useState<string>('');
   const lastAnalyzedFileKey = useRef<string | null>(null);
+  
+  // HEIC conversion hook
+  const { convertFile, isConverting, conversionProgress } = useHEICConversion();
   
   // Effect to manage blob URL lifecycle
   useEffect(() => {
@@ -93,6 +112,44 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
       console.log('[DamageAnalyzer.tsx] Analysis result received:', result);
       console.log('[DamageAnalyzer.tsx] identifiedDamageRegions:', result.identifiedDamageRegions);
 
+      // Helpers
+      const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
+      const deriveDamagePercentage = (region: any): number => {
+        const w = Number(region.width) || 0;
+        const h = Number(region.height) || 0;
+        if (!w || !h) return 10; // minimal non-zero to avoid 0s
+        // width/height are in percent of image; approximate area share
+        const areaShare = (w * h) / 100; // percent of image covered
+        // scale and clamp; boost for higher severity
+        const severity = (region.severity || '').toString().toLowerCase();
+        const sevMul = severity === 'severe' ? 2 : severity === 'moderate' ? 1.4 : severity === 'critical' ? 2.5 : 1.0;
+        return clamp(Math.round(areaShare * sevMul), 5, 100);
+      };
+      const inferPartName = (x: number, y: number): string => {
+        // Simple heuristic based on normalized coordinates
+        const X = Number.isFinite(x) ? x : 50;
+        const Y = Number.isFinite(y) ? y : 50;
+        if (Y < 25) {
+          if (X < 33) return 'Front-left panel';
+          if (X > 66) return 'Front-right panel';
+          return 'Hood / Front bumper';
+        } else if (Y < 60) {
+          if (X < 25) return 'Left fender / door';
+          if (X > 75) return 'Right fender / door';
+          return 'Center body panel';
+        } else {
+          if (X < 33) return 'Rear-left quarter / bumper';
+          if (X > 66) return 'Rear-right quarter / bumper';
+          return 'Trunk / Rear bumper';
+        }
+      };
+      const humanizeRegion = (r: any, idx: number) => {
+        const part = (r.partName || r.region || inferPartName(r.x, r.y)).replace('_', ' ');
+        const dt = (r.damageType || 'Damage').replace('_', ' ');
+        const sev = (r.severity || 'moderate').toLowerCase();
+        return `• Region ${idx + 1} — ${dt} on ${part} (${sev}, ${Math.round((r.confidence || 0.7) * 100)}% conf., ~${r.damagePercentage || deriveDamagePercentage(r)}% area)`;
+      };
+
       // Ensure identifiedDamageRegions is always an array and prepare the result
       const processedResult: DamageResult = {
         ...result,
@@ -109,9 +166,9 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
               damageType: region.damageType || 'Unknown',
               severity: region.severity || 'moderate',
               confidence: region.confidence !== undefined ? region.confidence : 0.8,
-              damagePercentage: region.damagePercentage !== undefined ? region.damagePercentage : 25,
-              description: region.description || 'Damage detected',
-              partName: region.partName || region.region || 'Unknown part',
+              damagePercentage: region.damagePercentage !== undefined ? region.damagePercentage : deriveDamagePercentage(region),
+              description: region.description || `Detected ${(region.damageType || 'damage').toString().replace('_',' ')} with ${(region.confidence ? Math.round(region.confidence*100) : 80)}% confidence. Severity: ${(region.severity || 'moderate')}.`,
+              partName: region.partName || region.region || inferPartName(region.x, region.y),
               estimatedCost: region.estimatedCost !== undefined ? region.estimatedCost : 5000
             }))
           : [],
@@ -124,6 +181,57 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
         // Ensure we always have a damage type
         damageType: result.damageType || "Analysis Complete",
       };
+
+      // Add fallback narrative if the description is JSON-heavy or empty
+      try {
+        const desc = (result.description || '').trim();
+        const looksLikeOnlyJson = !!desc && /\{[\s\S]*\}|\[[\s\S]*\]/.test(desc) && desc.replace(/[`\s{}\[\]"]+/g, '').length < 50;
+        const regions = processedResult.identifiedDamageRegions || [];
+        const avgConf = regions.length ? Math.round((regions.reduce((s, r) => s + (r.confidence || 0), 0) / regions.length) * 100) : Math.round((result.confidence || 0) * 100);
+        const avgDamage = regions.length ? Math.round(regions.reduce((s, r) => s + (r.damagePercentage || 0), 0) / regions.length) : 0;
+        const narrativeSections = [
+          '🔍 Overall Assessment',
+          `• ${regions.length} damage region${regions.length !== 1 ? 's' : ''} identified`,
+          `• Average damage level: ${avgDamage}%`,
+          `• Confidence: ${avgConf}%`,
+          '',
+          '📋 Region-by-Region Findings',
+          ...regions.map((r, i) => humanizeRegion(r, i)),
+          '',
+          '🎯 Recommendations',
+          '• Prioritize severe regions for immediate attention',
+          '• Get quotes from 2–3 repair centers (authorized, multi-brand)',
+          '• Document damage clearly for insurance',
+        ].join('\n');
+        if (!desc || looksLikeOnlyJson) {
+          processedResult.description = narrativeSections + (desc ? `\n\n${desc}` : '');
+        }
+      } catch {}
+
+      // Ensure enhanced repair costs include regional variations as fallback
+      try {
+        const ec: any = (processedResult as any).enhancedRepairCost || (result as any).enhancedRepairCost;
+        if (ec && !ec.regionalVariations) {
+          const parseRupees = (s?: any): number | null => {
+            if (!s) return null;
+            const str = typeof s === 'string' ? s : s.rupees;
+            if (!str) return null;
+            const m = str.toString().replace(/[^0-9]/g, '');
+            const n = parseInt(m || '0', 10);
+            return isNaN(n) ? null : n;
+          };
+          const cons = parseRupees(ec.conservative);
+          const comp = parseRupees(ec.comprehensive);
+          const base = comp || cons || 10000;
+          const asCurrency = (n: number) => ({ rupees: `₹${n.toLocaleString()}`, dollars: `$${Math.round(n/83)}` });
+          const regional = {
+            metro: asCurrency(Math.round(base * 1.15)),
+            tier1: asCurrency(Math.round(base * 1.0)),
+            tier2: asCurrency(Math.round(base * 0.85))
+          };
+          (processedResult as any).enhancedRepairCost = { ...ec, regionalVariations: regional };
+        }
+      } catch {}
 
       console.log('[DamageAnalyzer.tsx] Analysis complete with processed regions:', processedResult);
       setAnalysisResult(processedResult);
@@ -187,6 +295,77 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
     }
   }, [onAnalysisStart, onAnalysisComplete, onAnalysisError, getFileKey]);
 
+  // Enhanced analysis function with HEIC conversion
+  const performEnhancedAnalysis = useCallback(async (file: File) => {
+    try {
+      // Convert HEIC files if necessary
+      let processedFile = file;
+      if (file.name.toLowerCase().includes('.heic') || file.name.toLowerCase().includes('.heif')) {
+        const conversionResult = await convertFile(file);
+        processedFile = conversionResult.file;
+      }
+
+      // Perform the regular analysis
+      await performAnalysis(processedFile);
+    } catch (error) {
+      console.error('Enhanced analysis failed:', error);
+      setError('Failed to process image. Please try again.');
+      onAnalysisError('Failed to process image. Please try again.');
+    }
+  }, [convertFile, performAnalysis, onAnalysisError]);
+
+  // Export handlers
+  const handleExportPDF = useCallback(async () => {
+    if (!analysisResult) return;
+    
+    setIsExporting(true);
+    setExportType('PDF');
+    try {
+      await exportToPDF(analysisResult, blobUrl || undefined);
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      setError('Failed to export PDF. Please try again.');
+    } finally {
+      setIsExporting(false);
+      setExportType('');
+    }
+  }, [analysisResult, blobUrl]);
+
+  const handleExportExcel = useCallback(async () => {
+    if (!analysisResult) return;
+    
+    setIsExporting(true);
+    setExportType('Excel');
+    try {
+      await exportToExcel(analysisResult);
+    } catch (error) {
+      console.error('Excel export failed:', error);
+      setError('Failed to export Excel. Please try again.');
+    } finally {
+      setIsExporting(false);
+      setExportType('');
+    }
+  }, [analysisResult]);
+
+  const handleExportJSON = useCallback(() => {
+    if (!analysisResult) return;
+    
+    try {
+      exportToJSON(analysisResult);
+    } catch (error) {
+      console.error('JSON export failed:', error);
+      setError('Failed to export JSON. Please try again.');
+    }
+  }, [analysisResult]);
+
+  const handlePrint = useCallback(() => {
+    setShowPrintView(true);
+    setTimeout(() => {
+      printReport();
+      setShowPrintView(false);
+    }, 100);
+  }, []);
+
   // Effect to handle file changes and reset state
   useEffect(() => {
     if (!imageFile) return;
@@ -228,8 +407,8 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
     const timeoutId = setTimeout(() => {
       // Double-check that we're still in the same state
       if (!isAnalysisInProgress.current && lastAnalyzedFileKey.current !== fileKey) {
-        console.log('[DamageAnalyzer.tsx] ✅ Starting analysis for:', imageFile.name);
-        performAnalysis(imageFile, abortSignal);
+        console.log('[DamageAnalyzer.tsx] ✅ Starting enhanced analysis for:', imageFile.name);
+        performEnhancedAnalysis(imageFile);
       }
     }, 100);
 
@@ -299,6 +478,33 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Verdict Banner */}
+      <VerdictBanner 
+        damageAssessment={(analysisResult as any).damageAssessment || (analysisResult as any).mandatoryOutput?.damageAssessment}
+        confidence={analysisResult.confidence}
+        className="mb-4"
+      />
+
+      {/* Vehicle and Cost Information Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <VehicleInfoCard 
+          vehicleIdentification={(analysisResult as any).vehicleIdentification}
+          vehicleInformation={(analysisResult as any).vehicleInformation || (analysisResult as any).mandatoryOutput?.vehicleInformation}
+        />
+        <CostSummaryCard 
+          enhancedRepairCost={(analysisResult as any).enhancedRepairCost}
+          comprehensiveCostSummary={(analysisResult as any).comprehensiveCostSummary || (analysisResult as any).mandatoryOutput?.comprehensiveCostSummary}
+        />
+      </div>
+
+      {/* Insurance Recommendation */}
+      {((analysisResult as any).insuranceRecommendation || (analysisResult as any).mandatoryOutput?.insuranceRecommendation) && (
+        <InsuranceRecommendationCard 
+          insuranceRecommendation={(analysisResult as any).insuranceRecommendation || (analysisResult as any).mandatoryOutput?.insuranceRecommendation}
+          className="mb-6"
+        />
+      )}
       
       {/* Multi-Region Analysis Results */}
       {imageFile && blobUrl && analysisResult && (
@@ -307,6 +513,18 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
           imageUrl={blobUrl}
         />
       )}
+
+      {/* Analysis Options */}
+      <div className="flex items-center justify-end gap-3">
+        <label className="text-sm text-gray-700">Show Gemini analysis</label>
+        <button
+          type="button"
+          className={`px-3 py-1 rounded-md text-sm font-medium ${showGeminiAnalysis ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+          onClick={() => setShowGeminiAnalysis(v => !v)}
+        >
+          {showGeminiAnalysis ? 'On' : 'Off'}
+        </button>
+      </div>
 
       <Card>
         <CardHeader>
@@ -371,9 +589,10 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
               </div>
             </div>
 
-            {/* Full Gemini Analysis - Always show this section */}
+            {/* Gemini Analysis (toggleable) */}
+            {showGeminiAnalysis && (
               <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-6 border border-purple-200">
-                <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                <h3 className="text-2xl font-extrabold text-gray-900 mb-4 flex items-center">
                   <svg className="w-6 h-6 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
@@ -381,17 +600,43 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                 </h3>
                 <div className="bg-white rounded-lg p-6 shadow-sm">
                   <div className="space-y-4">
-                    {analysisResult.description.split('\n').map((line, index) => {
-                      const trimmedLine = line.trim();
-                      
-                      // Skip empty lines
-                      if (!trimmedLine) return null;
+                    {(() => {
+                      let inJsonBlock = false;
+                      let inCodeFence = false;
+                      return analysisResult.description.split('\n').map((line, index) => {
+                        const trimmedLine = line.trim();
+                        
+                        // Toggle code fence blocks
+                        if (trimmedLine.startsWith('```')) {
+                          inCodeFence = !inCodeFence;
+                          return null;
+                        }
+
+                        // If inside fenced code, skip
+                        if (inCodeFence) return null;
+
+                        // Detect start of JSON-like block
+                        if (!inJsonBlock && (trimmedLine.startsWith('{') || trimmedLine.startsWith('['))) {
+                          inJsonBlock = true;
+                          return null;
+                        }
+
+                        // If inside JSON block, check for end and skip lines
+                        if (inJsonBlock) {
+                          if (trimmedLine.endsWith('}') || trimmedLine.endsWith(']')) {
+                            inJsonBlock = false;
+                          }
+                          return null;
+                        }
+
+                        // Skip individual JSON-ish key lines like "key": value
+                        if (/^"[^"]+"\s*:/.test(trimmedLine)) return null;
                       
                       // Main section headers (with emojis)
                       if (trimmedLine.match(/^🔍|^📋|^💰|^🏢|^⚠️|^📊|^🎯/)) {
                         return (
                           <div key={index} className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg p-4 mt-6 first:mt-0">
-                            <h4 className="text-lg font-bold flex items-center">
+                            <h4 className="text-xl font-bold flex items-center">
                               <span className="text-2xl mr-3">{trimmedLine.charAt(0)}</span>
                               {trimmedLine.substring(2)}
                             </h4>
@@ -403,7 +648,7 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                       if (trimmedLine.match(/^[A-Z][A-Z\s&-]+:$/) && trimmedLine.length < 50) {
                         return (
                           <div key={index} className="bg-gradient-to-r from-indigo-100 to-blue-100 rounded-lg p-3 mt-4 border-l-4 border-indigo-500">
-                            <h5 className="font-bold text-indigo-800 flex items-center">
+                            <h5 className="font-bold text-indigo-900 flex items-center text-lg">
                               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                               </svg>
@@ -417,7 +662,7 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                       if (trimmedLine.startsWith('🏛️')) {
                         return (
                           <div key={index} className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg p-3 mt-3 border-l-4 border-green-500">
-                            <h6 className="font-semibold text-green-800 flex items-center">
+                            <h6 className="font-semibold text-green-900 flex items-center text-base">
                               <span className="text-lg mr-2">🏛️</span>
                               {trimmedLine.substring(3)}
                             </h6>
@@ -434,7 +679,7 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                               </svg>
                             </span>
-                            <span className="text-gray-700 leading-relaxed">{trimmedLine.substring(1).trim()}</span>
+                            <span className="text-gray-800 leading-relaxed text-base">{trimmedLine.substring(1).trim()}</span>
                           </div>
                         );
                       }
@@ -443,7 +688,7 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                       if (trimmedLine.includes('₹') || trimmedLine.includes('$')) {
                         return (
                           <div key={index} className="bg-yellow-50 rounded-lg p-3 mt-2 border border-yellow-200">
-                            <span className="text-yellow-800 font-medium flex items-center">
+                            <span className="text-yellow-900 font-medium flex items-center text-base">
                               <svg className="w-4 h-4 mr-2 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                               </svg>
@@ -456,17 +701,18 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
                       // Regular text lines
                       if (trimmedLine) {
                         return (
-                          <div key={index} className="text-gray-700 leading-relaxed pl-2 mt-1">
+                          <div key={index} className="text-gray-800 leading-relaxed pl-2 mt-1 text-base">
                             {trimmedLine}
                           </div>
                         );
                       }
                       
                       return null;
-                    })}
+                    });})()}
                   </div>
                 </div>
               </div>
+            )}
 
             {/* Damage Regions Details */}
             {identifiedRegions && identifiedRegions.length > 0 && (
@@ -655,7 +901,87 @@ const DamageAnalyzer: React.FC<DamageAnalyzerProps> = ({
         />
       )}
 
-      <Button onClick={onBack} variant="outline">Back to Upload</Button>
+      {/* Enhanced Action Buttons */}
+      <div className="flex flex-wrap gap-3 mt-6">
+        <Button onClick={onBack} variant="outline">
+          Back to Upload
+        </Button>
+        
+        {analysisResult && (
+          <>
+            {/* Detailed Gemini Analysis Button */}
+            <DetailedGeminiAnalysisModal 
+              analysisResult={analysisResult}
+              onExportPDF={handleExportPDF}
+              onPrint={handlePrint}
+            />
+            
+            {/* Export Options */}
+            <Button 
+              variant="outline" 
+              onClick={handleExportPDF}
+              disabled={isExporting}
+            >
+              {isExporting && exportType === 'PDF' ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
+              Export PDF
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              onClick={handleExportExcel}
+              disabled={isExporting}
+            >
+              {isExporting && exportType === 'Excel' ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4 mr-2" />
+              )}
+              Export Excel
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              onClick={handleExportJSON}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export JSON
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              onClick={handlePrint}
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Print Report
+            </Button>
+          </>
+        )}
+      </div>
+
+      {/* HEIC Conversion Progress */}
+      {isConverting && conversionProgress && (
+        <Alert className="mt-4">
+          <Upload className="h-4 w-4" />
+          <AlertTitle>Converting Image Format</AlertTitle>
+          <AlertDescription>
+            {conversionProgress.message} ({conversionProgress.progress}%)
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Print View Modal */}
+      {showPrintView && analysisResult && (
+        <div className="fixed inset-0 bg-white z-50 overflow-auto print:relative print:bg-transparent">
+          <PrintFriendlyReport 
+            analysisResult={analysisResult}
+            imageUrl={blobUrl || undefined}
+          />
+        </div>
+      )}
     </div>
   );
 };

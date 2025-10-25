@@ -7,6 +7,7 @@ import DamageAnalyzer from './damage/DamageAnalyzer';
 import unifiedApiService from '@/services/unifiedApiService';
 import damageRegionService from '@/services/damageRegionService';
 import MultiRegionAnalysisResults from './analysis/MultiRegionAnalysisResults';
+import { useFirebaseService } from '@/services/firebaseService';
 
 interface ImageUploadProps {
   onImageUploaded?: (imageUrl: string, analysisResult: DamageResult) => void;
@@ -15,6 +16,7 @@ interface ImageUploadProps {
 const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const { firebaseUser, loading: loadingAuth } = useFirebaseAuth();
   const { success, error: notifyError } = useNotificationHelpers();
+  const firebaseService = useFirebaseService();
 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +24,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
   const [analysisResult, setAnalysisResult] = useState<DamageResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);  const previewUrlRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);  
+  const previewUrlRef = useRef<string | null>(null);
   const blobUrlsRef = useRef<string[]>([]);
 
   // Effect to manage URL objects and prevent memory leaks
@@ -64,17 +67,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
+    // Allow preview even if not logged in; actual analysis will still be gated
     if (!firebaseUser && !loadingAuth) {
-      setError('You must be logged in to upload images.');
-      notifyError('Authentication Required', 'Please log in to upload and analyze images.');
-      return;
+      setError('You are not logged in. Preview enabled, analysis requires login.');
+      notifyError('Authentication Required', 'Please log in to analyze and save results.');
+      // do not return here so user can still preview the image
     }
 
     // Validate file type
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
     if (!validTypes.includes(file.type)) {
-      setError('Invalid file type. Please upload a JPG, JPEG, or PNG image.');
-      notifyError('Invalid File Type', 'Please upload a JPG, JPEG, or PNG image.');
+      setError('Invalid file type. Please upload a JPG, JPEG, PNG, WEBP, or HEIC/HEIF image.');
+      notifyError('Invalid File Type', 'Please upload a JPG, JPEG, PNG, WEBP, or HEIC/HEIF image.');
       return;
     }
 
@@ -100,15 +104,30 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
     setProgress(0);
 
     success('Image Uploaded', 'Image ready for analysis. Click "Analyze Image" to start.');
-  }, [firebaseUser, loadingAuth, success, notifyError, preview]);  const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
+  }, [firebaseUser, loadingAuth, success, notifyError, preview]);  
+
+  const { getRootProps, getInputProps, isDragActive, isDragReject, open } = useDropzone({
     onDrop,
-    accept: {
-      'image/jpeg': ['.jpeg', '.jpg'],
-      'image/png': ['.png']
+    onDropRejected: (fileRejections) => {
+      const first = fileRejections?.[0];
+      const code = first?.errors?.[0]?.code;
+      const message = first?.errors?.[0]?.message;
+      const msg = code === 'file-invalid-type'
+        ? 'Unsupported file type. Please upload JPG, JPEG, PNG, or WEBP.'
+        : code === 'file-too-large'
+          ? 'File too large. Maximum size is 10MB.'
+          : message || 'File was rejected.';
+      setError(msg);
+      notifyError('Upload Error', msg);
+    },
+    accept: { 
+      'image/*': [],
+      'image/heic': ['.heic'],
+      'image/heif': ['.heif']
     },
     maxFiles: 1,
     maxSize: 10 * 1024 * 1024, // 10MB
-    disabled: uploading || loadingAuth,
+    disabled: uploading,
     noClick: false,
     noKeyboard: false,
     multiple: false
@@ -154,6 +173,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
     
     // Convert file to Base64 for region analysis and storage
     let imageBase64 = '';
+
     if (selectedFile) {
       try {
         imageBase64 = await new Promise<string>((resolve, reject) => {
@@ -168,15 +188,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
       }
     }
 
-    // Enhance the result with damage region analysis
+    // Enhance the result with damage region analysis only if regions are missing
     let enhancedResult = result;
-    if (imageBase64) {
+    const hasTopRegions = Array.isArray(result?.identifiedDamageRegions) && (result?.identifiedDamageRegions?.length || 0) > 0;
+    const hasMoRegions = Array.isArray((result as any)?.mandatoryOutput?.identifiedDamageRegions) && (((result as any)?.mandatoryOutput?.identifiedDamageRegions?.length) || 0) > 0;
+    if (!hasTopRegions && !hasMoRegions && imageBase64) {
       try {
         enhancedResult = await damageRegionService.enhanceDamageResult(result, imageBase64);
         console.log('🔍 ImageUpload: Enhanced result with regions:', enhancedResult.identifiedDamageRegions?.length || 0);
       } catch (error) {
         console.error('Failed to enhance with region analysis:', error);
       }
+    } else {
+      console.log('ℹ️ ImageUpload: Skipping region enhancement (regions already present from AI)');
     }
 
     setAnalysisResult(enhancedResult);
@@ -197,21 +221,43 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
 
     // Save analysis to history with proper image data
     try {
+      // Upload original image and a small thumbnail to Firebase Storage
+      let imagePath = '';
+      let imageUrl = '';
+      let thumbnailPath = '';
+      let thumbnailUrl = '';
+      if (selectedFile) {
+        try {
+          const media = await firebaseService.uploadAnalysisMedia(selectedFile);
+          imagePath = media.imagePath;
+          imageUrl = media.imageUrl;
+          thumbnailPath = media.thumbnailPath;
+          thumbnailUrl = media.thumbnailUrl;
+        } catch (err) {
+          console.error('Failed to upload media to Firebase Storage:', err);
+        }
+      }
+      const nowIso = new Date().toISOString();
       const historyItem = {
-        image: imageBase64 || preview || '',
-        result: result,
-        filename: selectedFile?.name || (result.isDemoMode ? 'demo_analysis.jpg' : 'analysis.jpg'),
-        timestamp: new Date().toISOString(),
-        analysisDate: new Date().toISOString(),
-        confidence: result.confidence,
-        severity: result.severity || 'unknown',
-        isDemo: result.isDemoMode || false,
+        // Avoid storing base64 in DB; rely on Storage references
+        image: '',
+        imageUrl: thumbnailUrl || imageUrl || '',
+        imagePath,
+        thumbnailUrl,
+        thumbnailPath,
+        result: enhancedResult,
+        filename: selectedFile?.name || (enhancedResult.isDemoMode ? 'demo_analysis.jpg' : 'analysis.jpg'),
+        timestamp: nowIso,
+        analysisDate: nowIso,
+        confidence: enhancedResult.confidence,
+        severity: enhancedResult.severity || 'unknown',
+        isDemo: enhancedResult.isDemoMode || false,
       };
       
       console.log(`💾 Saving ${historyItem.isDemo ? 'DEMO' : 'REAL'} analysis to history...`);
       
       await unifiedApiService.addAnalysisToHistory(historyItem);
-      
+
       // Add to cache for immediate UI update
       const uploadedImage: UploadedImage = {
         id: Date.now().toString() + Math.random().toString(36).substring(2, 15),
@@ -336,7 +382,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
                   className={`mt-6 p-8 border-2 border-dashed rounded-xl text-center cursor-pointer transition-colors duration-200 ease-in-out 
                     ${isDragActive ? 'border-rose-500 bg-rose-50' : 'border-gray-300 hover:border-gray-400'}
                     ${isDragReject ? 'border-red-500 bg-red-50' : ''}
-                    ${(uploading || loadingAuth) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <input {...getInputProps()} />
                   {preview && selectedFile ? (
@@ -355,7 +401,17 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUploaded }) => {
                   ) : (
                     isDragActive ?
                       <p className="text-rose-600">Drop the image here ...</p> :
-                      <p className="text-gray-500">Drag and drop an image here, or click to select image</p>
+                      <div className="flex flex-col items-center gap-3">
+                        <p className="text-gray-500">Drag & drop an image here, or</p>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); open(); }}
+                          className="inline-flex items-center px-4 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                        >
+                          Browse files
+                        </button>
+                        <p className="text-xs text-gray-400">JPG, JPEG, PNG, WEBP, or HEIC/HEIF up to 10MB</p>
+                      </div>
                   )}
                 </div>
 

@@ -48,6 +48,25 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
     def extract_vehicle_identification(text: str) -> dict:
         """Extract vehicle identification from AI response"""
         try:
+            # Try JSON block first
+            match = re.search(r'"vehicleIdentification"\s*:\s*({[\s\S]*?})', text or "", re.IGNORECASE)
+            if match:
+                try:
+                    vi = json.loads(match.group(1))
+                    if isinstance(vi, dict):
+                        return {
+                            "make": vi.get("make", "Unknown"),
+                            "model": vi.get("model", "Unknown"),
+                            "year": str(vi.get("year", "Unknown")),
+                            "trimLevel": vi.get("trimLevel", "Unknown"),
+                            "bodyStyle": vi.get("bodyStyle", "Unknown"),
+                            "confidence": float(vi.get("confidence", 0.6)),
+                            "identificationDetails": vi.get("identificationDetails") or f"Vehicle identified as {vi.get('make','Unknown')} {vi.get('model','Unknown')}"
+                        }
+                except Exception:
+                    pass
+
+            # Fallback to pattern extraction
             make_patterns = [r'Make[:\s]*([^\n,\]]+)', r'Brand[:\s]*([^\n,\]]+)']
             model_patterns = [r'Model[:\s]*([^\n,\]]+)', r'Model Name[:\s]*([^\n,\]]+)']
             year_patterns = [r'Year[:\s]*(\d{4})', r'Model Year[:\s]*(\d{4})']
@@ -58,21 +77,21 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
             confidence = 0.5
             
             for pattern in make_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    make = match.group(1).strip()
+                m = re.search(pattern, text or "", re.IGNORECASE)
+                if m:
+                    make = m.group(1).strip()
                     break
             
             for pattern in model_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    model = match.group(1).strip()
+                m = re.search(pattern, text or "", re.IGNORECASE)
+                if m:
+                    model = m.group(1).strip()
                     break
             
             for pattern in year_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    year = match.group(1).strip()
+                m = re.search(pattern, text or "", re.IGNORECASE)
+                if m:
+                    year = m.group(1).strip()
                     break
             
             return {
@@ -91,27 +110,95 @@ def parse_ai_response_to_damage_result(raw_analysis: str) -> dict:
     def extract_repair_costs(text: str) -> dict:
         """Extract repair costs from AI response"""
         try:
-            conservative_match = re.search(r'Conservative[:\s]*₹([0-9,]+)', text, re.IGNORECASE)
-            comprehensive_match = re.search(r'Comprehensive[:\s]*₹([0-9,]+)', text, re.IGNORECASE)
-            
-            conservative = conservative_match.group(1) if conservative_match else "3,000"
-            comprehensive = comprehensive_match.group(1) if comprehensive_match else "5,000"
-            
+            def as_currency(val):
+                if val is None:
+                    return {"rupees": "₹0", "dollars": "$0"}
+                if isinstance(val, dict):
+                    val = val.get("rupees")
+                if isinstance(val, (int, float)):
+                    rupees = int(val)
+                else:
+                    s = str(val or "")
+                    digits = re.sub(r"[^0-9]", "", s)
+                    rupees = int(digits) if digits else 0
+                return {"rupees": f"₹{rupees:,}", "dollars": f"${max(1, round(rupees/83))}"}
+
+            # Try JSON 'enhancedRepairCost'
+            m = re.search(r'"enhancedRepairCost"\s*:\s*({[\s\S]*?})', text or "", re.IGNORECASE)
+            if m:
+                try:
+                    rc = json.loads(m.group(1))
+                    if isinstance(rc, dict):
+                        conservative = as_currency(rc.get("conservative"))
+                        comprehensive = as_currency(rc.get("comprehensive"))
+                        premium = rc.get("premium")
+                        premiumC = as_currency(premium) if premium is not None else None
+                        labor = rc.get("laborHours") or "2-4 hours"
+                        breakdown = rc.get("breakdown") or {}
+                        partsC = as_currency(breakdown.get("parts"))
+                        laborC = as_currency(breakdown.get("labor"))
+                        materials = breakdown.get("materials")
+                        materialsC = as_currency(materials) if materials is not None else None
+                        regional = rc.get("regionalVariations")
+                        if not regional:
+                            base_rupees_str = (comprehensive or {"rupees": "₹0"})["rupees"]
+                            base_num = int(re.sub(r"[^0-9]", "", base_rupees_str) or "0") or 10000
+                            regional = {
+                                "metro": as_currency(round(base_num * 1.15)),
+                                "tier1": as_currency(round(base_num * 1.00)),
+                                "tier2": as_currency(round(base_num * 0.85)),
+                            }
+                        result = {
+                            "conservative": conservative,
+                            "comprehensive": comprehensive,
+                            "laborHours": labor,
+                            "breakdown": {"parts": partsC, "labor": laborC},
+                            "regionalVariations": regional,
+                        }
+                        if premiumC:
+                            result["premium"] = premiumC
+                        if materialsC:
+                            result["breakdown"]["materials"] = materialsC
+                        return result
+                except Exception:
+                    pass
+
+            # Fallback: pattern-based conservative/comprehensive
+            cons_m = re.search(r'Conservative[:\s]*₹([0-9,]+)', text or "", re.IGNORECASE)
+            comp_m = re.search(r'Comprehensive[:\s]*₹([0-9,]+)', text or "", re.IGNORECASE)
+            conservative_val = cons_m.group(1) if cons_m else "3,000"
+            comprehensive_val = comp_m.group(1) if comp_m else "5,000"
+            base_num = int(re.sub(r"[^0-9]", "", comprehensive_val) or "5000")
             return {
-                "conservative": {"rupees": f"₹{conservative}", "dollars": "$36"},
-                "comprehensive": {"rupees": f"₹{comprehensive}", "dollars": "$60"},
+                "conservative": as_currency(conservative_val),
+                "comprehensive": as_currency(comprehensive_val),
                 "laborHours": "2-4 hours",
                 "breakdown": {
-                    "parts": {"rupees": f"₹{conservative}", "dollars": "$36"},
-                    "labor": {"rupees": "₹1,000", "dollars": "$12"},
-                    "materials": {"rupees": "₹500", "dollars": "$6"}
+                    "parts": as_currency(conservative_val),
+                    "labor": as_currency(1000),
+                    "materials": as_currency(500)
+                },
+                "regionalVariations": {
+                    "metro": as_currency(int(base_num * 1.15)),
+                    "tier1": as_currency(int(base_num * 1.00)),
+                    "tier2": as_currency(int(base_num * 0.85))
                 }
             }
         except Exception as e:
             logger.error(f"[PARSER] Error extracting repair costs: {str(e)}")
             return {
                 "conservative": {"rupees": "₹3,000", "dollars": "$36"},
-                "comprehensive": {"rupees": "₹5,000", "dollars": "$60"}
+                "comprehensive": {"rupees": "₹5,000", "dollars": "$60"},
+                "laborHours": "2-4 hours",
+                "breakdown": {
+                    "parts": {"rupees": "₹3,000", "dollars": "$36"},
+                    "labor": {"rupees": "₹1,000", "dollars": "$12"}
+                },
+                "regionalVariations": {
+                    "metro": {"rupees": "₹5,750", "dollars": "$69"},
+                    "tier1": {"rupees": "₹5,000", "dollars": "$60"},
+                    "tier2": {"rupees": "₹4,250", "dollars": "$51"}
+                }
             }
     
     def determine_damage_type_and_confidence(text) -> tuple:

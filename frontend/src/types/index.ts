@@ -138,6 +138,10 @@ export interface AnalysisHistoryItem {
   id: string;
   userId: string;
   imageUrl: string;
+  // Minimal image storage fields
+  imagePath?: string;       // Firebase Storage path to the original image
+  thumbnailUrl?: string;    // Public URL (or signed) to a small thumbnail for fast lists
+  thumbnailPath?: string;   // Storage path to the thumbnail
   analysisDate: string; // ISO date string
   damageDescription: string;
   repairEstimate?: string;
@@ -155,6 +159,10 @@ export interface HistoricalAnalysis {
   timestamp: string; // ISO string of when the analysis was done
   image: string; // Base64 encoded image or a URL to the image
   imageUrl?: string; // Alternative image URL field for compatibility
+  // Minimal image storage fields
+  imagePath?: string;       // Firebase Storage path for original image
+  thumbnailUrl?: string;    // Small thumbnail URL for fast display
+  thumbnailPath?: string;   // Storage path for thumbnail
   result: DamageResult; // The full damage analysis result
   userId?: string; // Optional: if you have user-specific history
   uploadedAt: string; // Added to match usage in Dashboard.tsx

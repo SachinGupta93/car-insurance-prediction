@@ -15,6 +15,11 @@ interface ApiResponse<T> {
 }
 
 class UnifiedApiService {
+  // Simple in-memory caches and in-flight deduplication
+  private aggregatedCache: any | null = null;
+  private insuranceCache: any | null = null;
+  private inflightAggregated: Promise<any> | null = null;
+  private inflightInsurance: Promise<any> | null = null;
   private async getAuthHeaders(): Promise<HeadersInit> {
     console.log('🔑 [UnifiedAPI] Getting auth headers...');
     
@@ -24,9 +29,15 @@ class UnifiedApiService {
 
       if (!user) {
         console.error('❌ [UnifiedAPI] User not authenticated.');
-        // If no user, we cannot make authenticated requests.
-        // Depending on the app's public/private routes, you might want to
-        // redirect to login here or let the request fail.
+        // Development convenience: allow backend dev bypass when enabled
+        if (DEV_MODE) {
+          console.warn('🔧 [UnifiedAPI] DEV_MODE active; using X-Dev-Auth-Bypass header');
+          const devHeaders: HeadersInit = {
+            'Content-Type': 'application/json',
+            'X-Dev-Auth-Bypass': 'true'
+          };
+          return devHeaders;
+        }
         throw new Error('User not authenticated');
       }
 
@@ -34,12 +45,16 @@ class UnifiedApiService {
 
       if (!token) {
         console.error('❌ [UnifiedAPI] Could not retrieve Firebase ID token.');
+        if (DEV_MODE) {
+          console.warn('🔧 [UnifiedAPI] DEV_MODE active; falling back to X-Dev-Auth-Bypass');
+          return {
+            'Content-Type': 'application/json',
+            'X-Dev-Auth-Bypass': 'true'
+          } as HeadersInit;
+        }
         throw new Error('Could not retrieve Firebase ID token');
       }
       
-      // Store the fresh token in localStorage for other parts of the app if needed
-      localStorage.setItem('firebaseIdToken', token);
-
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
@@ -73,7 +88,10 @@ class UnifiedApiService {
   /**
    * Analyze car damage from image file
    */
-  async analyzeDamage(imageFile: File): Promise<DamageResult> {
+  async analyzeDamage(
+    imageFile: File,
+    opts?: { signal?: AbortSignal; timeoutMs?: number }
+  ): Promise<DamageResult> {
     try {
       const formData = new FormData();
       formData.append('image', imageFile);
@@ -84,7 +102,20 @@ class UnifiedApiService {
       
       // Create AbortController for proper timeout handling
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased from 8s to 30s for complex image analysis
+      // Merge with caller-provided signal if any
+      if (opts?.signal) {
+        const onAbort = () => {
+          try { controller.abort(); } catch {}
+        };
+        if (opts.signal.aborted) {
+          // If already aborted, abort immediately
+          onAbort();
+        } else {
+          opts.signal.addEventListener('abort', onAbort, { once: true });
+        }
+      }
+      const timeoutMs = Math.max(10000, opts?.timeoutMs ?? 90000); // default 90s for complex analysis
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch(`${API_BASE_URL}/api/analyze-damage`, {
         method: 'POST',
@@ -150,19 +181,26 @@ class UnifiedApiService {
 
       const data = await response.json();
       
-      // Transform backend response to DamageResult format
-      if (data.data && data.data.structured_data) {
-        const result = data.data.structured_data;
-        
-        // Add demo mode flags if present
+      // Transform backend response to DamageResult format with flexible parsing
+      let result: any = null;
+      if (data?.data?.structured_data) {
+        result = data.data.structured_data;
+        // Add demo flags if present on wrapper
         if (data.demo_mode) {
           result.isDemoMode = true;
           result.quotaExceeded = data.quota_exceeded;
           result.retryDelaySeconds = data.retry_delay_seconds;
         }
-        
+      } else if (data?.structured_data) {
+        result = data.structured_data;
+      } else if (data && typeof data === 'object' && 'damageType' in data && 'confidence' in data) {
+        // Some endpoints (e.g., multi-region) may return the structured payload directly
+        result = data;
+      }
+      
+      if (result) {
         console.log('✅ [UnifiedAPI] Returning structured data:', result);
-        return result;
+        return result as DamageResult;
       }
       
       throw new Error('Invalid response format from backend');
@@ -171,6 +209,10 @@ class UnifiedApiService {
       
       // Handle AbortError specifically
       if (error instanceof Error && error.name === 'AbortError') {
+        // Distinguish between caller-cancelled vs timeout
+        if (opts?.signal?.aborted) {
+          throw new Error('Analysis was cancelled');
+        }
         throw new Error('Request timeout - Analysis took too long');
       }
       
@@ -186,14 +228,16 @@ class UnifiedApiService {
     
     try {
       const headers = await this.getAuthHeaders();
-      console.log('🌐 [UnifiedAPI] Making request to:', `${API_BASE_URL}/api/analysis/history`);
-      console.log('🔑 [UnifiedAPI] Headers:', headers);
+      const limit = 50;
+      console.log('🌐 [UnifiedAPI] Making request to:', `${API_BASE_URL}/api/analysis/history?limit=${limit}`);
+
+      // Do not log headers to avoid exposing bearer token
       
-      const response = await fetch(`${API_BASE_URL}/api/analysis/history`, {
+      const response = await fetch(`${API_BASE_URL}/api/analysis/history?limit=${limit}`, {
         method: 'GET',
         headers: headers
       });
-      
+
       console.log('📡 [UnifiedAPI] Response status:', response.status);
 
       if (!response.ok) {
@@ -296,11 +340,15 @@ class UnifiedApiService {
   async ensureUserProfile(userData: any): Promise<any> {
     try {
       const headers = await this.getAuthHeaders();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       const response = await fetch(`${API_BASE_URL}/api/user/ensure-profile`, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify(userData)
+        body: JSON.stringify(userData),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Network error' }));
@@ -313,6 +361,22 @@ class UnifiedApiService {
       return data;
     } catch (error) {
       console.error('💥 [UnifiedAPI] Error ensuring user profile:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        const isDevelopment = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development';
+        if (isDevelopment) {
+          console.warn('🔧 [UnifiedAPI] ensure-profile timed out in dev mode, returning fallback');
+          return {
+            success: true,
+            created: false,
+            data: {
+              uid: userData?.uid || 'dev-fallback',
+              email: userData?.email || 'dev@example.com',
+              display_name: userData?.name || userData?.displayName || 'Dev User'
+            }
+          };
+        }
+        throw new Error('Request timeout while ensuring user profile');
+      }
       
       // In development mode, provide a fallback
       const isDevelopment = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development';
@@ -385,50 +449,96 @@ class UnifiedApiService {
    * Get aggregated dashboard data for admin/insurance views
    */
   async getAggregatedDashboardData(): Promise<any> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/api/admin/aggregated-dashboard-data`, {
-        method: 'GET',
-        headers: headers
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      // Return the full response to preserve metadata like data_source
-      return data;
-    } catch (error) {
-      console.error('Error fetching aggregated dashboard data:', error);
-      throw error;
+    // If there's an in-flight request, reuse it
+    if (this.inflightAggregated) {
+      return this.inflightAggregated;
     }
+    this.inflightAggregated = (async () => {
+      try {
+        const headers = await this.getAuthHeaders();
+        const perUser = 20;
+        const maxUsers = 20;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(`${API_BASE_URL}/api/admin/aggregated-dashboard-data?per_user_limit=${perUser}&max_users=${maxUsers}`, {
+          method: 'GET',
+          headers: headers,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+          throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        // Cache last good payload
+        this.aggregatedCache = data;
+        return data;
+      } catch (error: any) {
+        // Gracefully handle aborts: return cached data if available
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn('🔁 [UnifiedAPI] Aggregated request aborted; returning cached data if available');
+          if (this.aggregatedCache) {
+            return this.aggregatedCache;
+          }
+          // Safe minimal structure to avoid UI errors
+          return { success: true, data: {}, data_source: 'empty', message: 'Request aborted (no cache)' };
+        }
+        console.error('Error fetching aggregated dashboard data:', error);
+        throw error;
+      } finally {
+        this.inflightAggregated = null;
+      }
+    })();
+    return this.inflightAggregated;
   }
 
   /**
    * Get insurance-specific dashboard data
    */
   async getInsuranceDashboardData(): Promise<any> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const response = await fetch(`${API_BASE_URL}/api/admin/insurance-dashboard-data`, {
-        method: 'GET',
-        headers: headers
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Network error' }));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      // Return the full response to preserve metadata like data_source
-      return data;
-    } catch (error) {
-      console.error('Error fetching insurance dashboard data:', error);
-      throw error;
+    if (this.inflightInsurance) {
+      return this.inflightInsurance;
     }
+    this.inflightInsurance = (async () => {
+      try {
+        const headers = await this.getAuthHeaders();
+        const perUser = 20;
+        const maxUsers = 20;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(`${API_BASE_URL}/api/admin/insurance-dashboard-data?per_user_limit=${perUser}&max_users=${maxUsers}`, {
+          method: 'GET',
+          headers: headers,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Network error' }));
+          throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        this.insuranceCache = data;
+        return data;
+      } catch (error: any) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn('🔁 [UnifiedAPI] Insurance request aborted; returning cached data if available');
+          if (this.insuranceCache) {
+            return this.insuranceCache;
+          }
+          return { success: true, data: {}, data_source: 'empty', message: 'Request aborted (no cache)' };
+        }
+        console.error('Error fetching insurance dashboard data:', error);
+        throw error;
+      } finally {
+        this.inflightInsurance = null;
+      }
+    })();
+    return this.inflightInsurance;
   }
   
   /**

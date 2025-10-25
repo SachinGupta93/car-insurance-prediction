@@ -8,12 +8,22 @@ interface RepairCostCardProps {
 
 export const RepairCostCard: React.FC<RepairCostCardProps> = ({ repairCost, damageType }) => {
   const [selectedView, setSelectedView] = useState<'estimate' | 'breakdown' | 'regional'>('estimate');
-  const formatCurrency = (amount: CurrencyAmount) => (
-    <div className="flex flex-col">
-      <span className="text-lg font-bold text-gray-900">{amount.rupees}</span>
-      <span className="text-sm text-gray-600">{amount.dollars}</span>
-    </div>
-  );
+  const formatCurrency = (amount?: CurrencyAmount) => {
+    if (!amount) {
+      return (
+        <div className="flex flex-col">
+          <span className="text-lg font-bold text-gray-900">N/A</span>
+          <span className="text-sm text-gray-600">N/A</span>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col">
+        <span className="text-lg font-bold text-gray-900">{amount.rupees}</span>
+        <span className="text-sm text-gray-600">{amount.dollars}</span>
+      </div>
+    );
+  };
 
   const ServiceTypeCard = ({ type, cost, description }: { type: string; cost: CurrencyAmount; description: string }) => (
     <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
@@ -66,18 +76,18 @@ export const RepairCostCard: React.FC<RepairCostCardProps> = ({ repairCost, dama
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
               <h4 className="text-sm font-semibold text-blue-800 mb-2">Conservative Estimate</h4>
-              {formatCurrency(repairCost.conservative)}
+              {formatCurrency(repairCost?.conservative)}
               <p className="text-xs text-blue-600 mt-1">Basic repair quality</p>
             </div>
             <div className="bg-green-50 rounded-lg p-4 border border-green-200">
               <h4 className="text-sm font-semibold text-green-800 mb-2">Comprehensive Repair</h4>
-              {formatCurrency(repairCost.comprehensive)}
+              {formatCurrency(repairCost?.comprehensive)}
               <p className="text-xs text-green-600 mt-1">OEM parts, recommended</p>
             </div>
-            {repairCost.premium && (
+            {repairCost?.premium && (
               <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
                 <h4 className="text-sm font-semibold text-purple-800 mb-2">Premium Quality</h4>
-                {formatCurrency(repairCost.premium)}
+                {formatCurrency(repairCost?.premium)}
                 <p className="text-xs text-purple-600 mt-1">Show quality finish</p>
               </div>
             )}
@@ -87,31 +97,39 @@ export const RepairCostCard: React.FC<RepairCostCardProps> = ({ repairCost, dama
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">Estimated Labor Time</span>
-              <span className="text-lg font-semibold text-gray-900">{repairCost.laborHours}</span>
+              <span className="text-lg font-semibold text-gray-900">{repairCost?.laborHours || 'N/A'}</span>
             </div>
           </div>
 
           {/* Service Type Comparison */}
-          <div>
-            <h4 className="text-md font-semibold text-gray-900 mb-4">Service Center Comparison</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <ServiceTypeCard
-                type="Authorized Center"
-                cost={repairCost.serviceTypeComparison.authorizedCenter}
-                description="OEM parts, warranty coverage, premium pricing"
-              />
-              <ServiceTypeCard
-                type="Multi-Brand Center"
-                cost={repairCost.serviceTypeComparison.multiBrandCenter}
-                description="Good quality, competitive pricing, experienced"
-              />
-              <ServiceTypeCard
-                type="Local Garage"
-                cost={repairCost.serviceTypeComparison.localGarage}
-                description="Budget-friendly, aftermarket parts option"
-              />
+          {repairCost?.serviceTypeComparison && typeof repairCost.serviceTypeComparison === 'object' && (
+            <div>
+              <h4 className="text-md font-semibold text-gray-900 mb-4">Service Center Comparison</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {repairCost?.serviceTypeComparison?.authorizedCenter && (
+                  <ServiceTypeCard
+                    type="Authorized Center"
+                    cost={repairCost?.serviceTypeComparison?.authorizedCenter}
+                    description="OEM parts, warranty coverage, premium pricing"
+                  />
+                )}
+                {repairCost?.serviceTypeComparison?.multiBrandCenter && (
+                  <ServiceTypeCard
+                    type="Multi-Brand Center"
+                    cost={repairCost?.serviceTypeComparison?.multiBrandCenter}
+                    description="Good quality, competitive pricing, experienced"
+                  />
+                )}
+                {repairCost?.serviceTypeComparison?.localGarage && (
+                  <ServiceTypeCard
+                    type="Local Garage"
+                    cost={repairCost?.serviceTypeComparison?.localGarage}
+                    description="Budget-friendly, aftermarket parts option"
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -120,38 +138,38 @@ export const RepairCostCard: React.FC<RepairCostCardProps> = ({ repairCost, dama
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
               <h4 className="text-sm font-semibold text-amber-800 mb-2">Parts Cost</h4>
-              {formatCurrency(repairCost.breakdown.parts)}
+              {formatCurrency(repairCost?.breakdown?.parts)}
             </div>
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
               <h4 className="text-sm font-semibold text-blue-800 mb-2">Labor Cost</h4>
-              {formatCurrency(repairCost.breakdown.labor)}
+              {formatCurrency(repairCost?.breakdown?.labor)}
             </div>
-            {repairCost.breakdown.materials && (
+            {repairCost?.breakdown?.materials && (
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                 <h4 className="text-sm font-semibold text-gray-800 mb-2">Materials</h4>
-                {formatCurrency(repairCost.breakdown.materials)}
+                {formatCurrency(repairCost?.breakdown?.materials)}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {selectedView === 'regional' && repairCost.regionalVariations && (
+      {selectedView === 'regional' && repairCost?.regionalVariations && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-red-50 rounded-lg p-4 border border-red-200">
               <h4 className="text-sm font-semibold text-red-800 mb-2">Metro Cities</h4>
-              {formatCurrency(repairCost.regionalVariations.metro)}
+              {formatCurrency(repairCost?.regionalVariations?.metro)}
               <p className="text-xs text-red-600 mt-1">Mumbai, Delhi, Bangalore</p>
             </div>
             <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
               <h4 className="text-sm font-semibold text-yellow-800 mb-2">Tier-1 Cities</h4>
-              {formatCurrency(repairCost.regionalVariations.tier1)}
+              {formatCurrency(repairCost?.regionalVariations?.tier1)}
               <p className="text-xs text-yellow-600 mt-1">Pune, Hyderabad, Ahmedabad</p>
             </div>
             <div className="bg-green-50 rounded-lg p-4 border border-green-200">
               <h4 className="text-sm font-semibold text-green-800 mb-2">Tier-2/3 Cities</h4>
-              {formatCurrency(repairCost.regionalVariations.tier2)}
+              {formatCurrency(repairCost?.regionalVariations?.tier2)}
               <p className="text-xs text-green-600 mt-1">Lower cost, competitive pricing</p>
             </div>
           </div>

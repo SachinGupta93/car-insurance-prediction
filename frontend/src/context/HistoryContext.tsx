@@ -68,7 +68,7 @@ export const HistoryProvider = ({ children }: { children: ReactNode }) => {
         return {
           id: item.id,
           userId: item.userId || '',
-          imageUrl: item.image || '',
+          imageUrl: (item as any).thumbnailUrl || (item as any).imageUrl || (item as any).image || '',
           analysisDate: item.analysisDate || item.timestamp || new Date().toISOString(),
           damageDescription,
           repairEstimate,

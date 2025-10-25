@@ -1,11 +1,13 @@
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   sendPasswordResetEmail,
   User,
   UserCredential,
   Auth
 } from 'firebase/auth';
+
 import { auth } from '@/lib/firebase';
 
 export interface AuthError {
@@ -19,6 +21,7 @@ export interface AuthError {
 export const signInWithGoogle = async (): Promise<UserCredential> => {
   try {
     const provider = new GoogleAuthProvider();
+
     // Add scopes if needed
     provider.addScope('profile');
     provider.addScope('email');
@@ -33,7 +36,7 @@ export const signInWithGoogle = async (): Promise<UserCredential> => {
     console.log('- Project ID:', import.meta.env.VITE_FIREBASE_PROJECT_ID);
     console.log('- Auth Domain:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
     
-    return signInWithPopup(auth, provider);
+    return await signInWithPopup(auth, provider);
   } catch (error: any) {
     console.error('Google sign in error details:', error);
     console.error('Error code:', error?.code);
@@ -44,7 +47,21 @@ export const signInWithGoogle = async (): Promise<UserCredential> => {
       console.error('IMPORTANT: The Google Identity Toolkit API has not been enabled for this project.');
       console.error('Please enable it in the Google Cloud Console: https://console.cloud.google.com/apis/library/identitytoolkit.googleapis.com');
     }
-    
+
+    // Handle popup/COOP issues by falling back to redirect
+    const popupBlocked = error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/unauthorized-domain';
+    const coopMsg = typeof error?.message === 'string' && error.message.toLowerCase().includes('cross-origin-opener-policy');
+    if (popupBlocked || coopMsg) {
+      console.warn('Popup sign-in blocked or COOP prevented window.close; falling back to signInWithRedirect');
+      const provider = new GoogleAuthProvider();
+      provider.addScope('profile');
+      provider.addScope('email');
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithRedirect(auth, provider);
+      // signInWithRedirect will navigate away; return a rejected promise to stop further handling
+      throw new Error('Redirecting for Google sign-in');
+    }
+
     throw error;
   }
 };
@@ -67,8 +84,8 @@ export const getFirebaseIdToken = async (forceRefresh = false): Promise<string |
   if (!user) return null;
   
   try {
+    // Do not persist ID token in localStorage to avoid security risk and large storage
     const token = await user.getIdToken(forceRefresh);
-    localStorage.setItem('firebaseIdToken', token);
     return token;
   } catch (error) {
     console.error('Error getting ID token:', error);

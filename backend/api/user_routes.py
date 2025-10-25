@@ -1,10 +1,11 @@
-﻿# User management routes for the car damage prediction API
+# User management routes for the car damage prediction API
 from flask import Blueprint, jsonify, request, current_app
 import logging
 import traceback
 from datetime import datetime
 from .auth_routes import firebase_auth_required
 from auth.user_auth import UserAuth
+import os
 
 logger = logging.getLogger(__name__)
 user_routes = Blueprint('user_routes', __name__)
@@ -32,43 +33,59 @@ def ensure_user_profile():
         
         user_auth = UserAuth(current_app.config['db_ref'])
         
-        try:
-            profile = user_auth.get_user_profile(user_id, auth_token)
-            logger.info(f"Profile already exists for user: {user_email}")
-            return jsonify({
-                'message': 'Profile already exists',
-                'profile': profile,
-                'success': True
-            }), 200
-        except Exception:
-            # Get data from the frontend, with a fallback for safety
-            data = request.get_json() if request.is_json else {}
-            logger.info(f"Request data for new profile: {data}")
+        # Build desired profile from request or defaults
+        data = request.get_json() if request.is_json else {}
+        user_name = data.get('name') or (request.user.get('name') if request.user else None) or user_email.split('@')[0]
+        user_email_from_data = data.get('email', user_email)
 
-            # Prioritize data from the request body, then Firebase token, then a default
-            user_name = data.get('name') or (request.user.get('name') if request.user else None) or user_email.split('@')[0]
-            user_email_from_data = data.get('email', user_email)
-
-            logger.info(f"Creating new profile for user: {user_email_from_data} with name: {user_name}")
-            
-            profile_data = {
-                'email': user_email_from_data, # Email from token is the source of truth
-                'name': user_name,
-                'created_at': datetime.now().isoformat(),
-                'analysis_count': 0,
-                'preferences': {
-                    'notifications': True,
-                    'theme': 'light'
-                }
+        profile_data = {
+            'email': user_email_from_data,
+            'name': user_name,
+            'created_at': datetime.now().isoformat(),
+            'analysis_count': 0,
+            'preferences': {
+                'notifications': True,
+                'theme': 'light'
             }
-            
-            user_auth.create_user_profile(user_id, profile_data, auth_token)
-            
+        }
+
+        # Fast path: ensure via single PUT first (has its own fast fallback)
+        try:
+            user_auth.ensure_user_profile(user_id, auth_token, default_profile=profile_data)
             return jsonify({
-                'message': 'Profile created successfully',
+                'message': 'Profile ensured',
                 'profile': profile_data,
                 'success': True
-            }), 201
+            }), 200
+        except Exception as e_put:
+            # Secondary fallback: use app db_ref with user token
+            try:
+                db_ref = current_app.config.get('db_ref')
+                if db_ref:
+                    ok = db_ref.child('users').child(user_id).child('profile').set(profile_data, auth_token=auth_token)
+                    if ok is True or ok is None:
+                        logger.info("Fallback write via db_ref succeeded")
+                        return jsonify({
+                            'message': 'Profile ensured (fallback)',
+                            'profile': profile_data,
+                            'success': True,
+                            'fallback': True
+                        }), 200
+            except Exception as e_fallback:
+                logger.warning(f"Fallback write failed: {str(e_fallback)}")
+
+            # In development mode, don't block the UI; return a graceful success
+            dev_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEV_MODE') == 'true'
+            if dev_mode:
+                logger.warning("DEV MODE: Returning graceful success for ensure-profile despite backend write failure")
+                return jsonify({
+                    'message': 'Dev mode: proceeding without persisted profile',
+                    'profile': profile_data,
+                    'success': True,
+                    'warning': 'Profile not persisted due to permission error'
+                }), 200
+            # Otherwise bubble up the error to outer handler
+            raise e_put
             
     except Exception as e:
         logger.error(f"Error ensuring user profile: {str(e)}")
@@ -134,8 +151,19 @@ def get_analysis_history():
         if not auth_token:
             return jsonify({'error': 'Authorization token is missing or invalid', 'success': False}), 401
         
-        logger.info(f"Fetching history for user_id: {user_id}")
-        history = user_auth.get_analysis_history(user_id, id_token=auth_token)
+        # Optional server-side limiting for performance
+        limit = None
+        limit_param = request.args.get('limit')
+        if limit_param is not None:
+            try:
+                limit_val = int(limit_param)
+                if limit_val > 0:
+                    limit = limit_val
+            except ValueError:
+                pass
+
+        logger.info(f"Fetching history for user_id: {user_id} with limit={limit}")
+        history = user_auth.get_analysis_history(user_id, id_token=auth_token, limit=limit, order_by='uploadedAt')
         
         logger.info("Successfully fetched history")
         
@@ -201,8 +229,21 @@ def add_analysis_to_history():
         
         logger.info(f"Adding analysis for user {user_id}")
         
+        # Ensure timestamps are set consistently
+        now_iso = datetime.now().isoformat()
         if 'timestamp' not in analysis_data:
-            analysis_data['timestamp'] = datetime.now().isoformat()
+            analysis_data['timestamp'] = now_iso
+        if 'uploadedAt' not in analysis_data:
+            analysis_data['uploadedAt'] = now_iso
+
+        # Sanitize large inline images to avoid bloating RTDB
+        try:
+            img_val = analysis_data.get('image')
+            if isinstance(img_val, str) and (img_val.startswith('data:image') or len(img_val) > 4000):
+                analysis_data['image'] = ''
+                analysis_data['image_truncated'] = True
+        except Exception:
+            pass
         
         result = user_auth.add_analysis_history(user_id, analysis_data, auth_token)
         logger.info("Analysis saved successfully")

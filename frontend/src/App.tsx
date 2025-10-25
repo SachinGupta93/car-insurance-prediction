@@ -33,7 +33,7 @@ function App() {
   return (
     <ErrorBoundary>
       <NotificationProvider>
-          <Router>
+          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <div className="min-h-screen flex flex-col relative overflow-hidden">            {/* Clean Background with Subtle Elements */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
               {/* Clean Background */}

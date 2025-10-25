@@ -21,12 +21,9 @@ export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       
-      // Store token in localStorage when user changes
       if (user) {
         try {
-          const token = await user.getIdToken();
-          localStorage.setItem('firebaseIdToken', token);
-          
+          // Ensure user profile exists (no need to persist token)
           // Automatically ensure user profile exists
           console.log('🔄 Auto-creating user profile for:', user.email);
           const userProfileData = {
@@ -41,7 +38,7 @@ export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
           // Don't block user login if profile creation fails
         }
       } else {
-        localStorage.removeItem('firebaseIdToken');
+        // Clear any app-local state if needed on sign-out (no token persistence)
       }
       
       setLoading(false);
@@ -52,8 +49,8 @@ export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
   const getIdTokenMethod = async (): Promise<string | null> => {
     if (!firebaseUser) return null;
     try {
-      const token = await firebaseUser.getIdToken(true);
-      localStorage.setItem('firebaseIdToken', token);
+      // Avoid unnecessary force refreshes unless backend rejects the token
+      const token = await firebaseUser.getIdToken();
       return token;
     } catch (error) {
       console.error('Error getting ID token:', error);
@@ -64,7 +61,6 @@ export const FirebaseAuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async (): Promise<void> => {
     try {
       await firebaseSignOut(auth);
-      localStorage.removeItem('firebaseIdToken');
     } catch (error) {
       console.error('Error signing out:', error);
       throw error;

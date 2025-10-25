@@ -18,6 +18,28 @@ interface APIResponse {
 }
 
 /**
+ * Lightweight helpers to inspect and recover AI backend state
+ */
+const getAIStatus = async (): Promise<any> => {
+  try {
+    const resp = await fetch(`${API_BASE_URL}/api/ai/status`, { method: 'GET' });
+    const json = await resp.json().catch(() => ({}));
+    return json?.data ?? json ?? {};
+  } catch {
+    return {};
+  }
+};
+
+const reloadAI = async (): Promise<void> => {
+  try {
+    await fetch(`${API_BASE_URL}/api/ai/reload`, { method: 'POST' });
+  } catch {}
+  try {
+    await fetch(`${API_BASE_URL}/api/ai/reset-quotas`, { method: 'POST' });
+  } catch {}
+};
+
+/**
  * Parses damage regions from AI response text
  */
 const parseDamageRegionsFromText = (text: string): DamageRegion[] => {
@@ -343,8 +365,19 @@ const retryWithBackoff = async <T>(
           continue;
         }
       }
-      
-      // For non-429 errors, throw immediately
+      // Retry once on timeouts/abort (likely analysis took too long)
+      const isTimeout = error instanceof Error && (
+        error.name === 'AbortError' ||
+        /timeout|took too long|aborted without reason/i.test(error.message)
+      );
+      if (isTimeout && attempt < maxRetries) {
+        const retryDelay = baseDelay * Math.pow(2, attempt);
+        console.log(`[retryWithBackoff] Timeout/Abort detected, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        continue;
+      }
+
+      // For other non-retriable errors, throw immediately
       if (attempt === 0) {
         throw error;
       }
@@ -369,6 +402,13 @@ export const analyzeCarDamageWithAI = async (
       await new Promise(resolve => setTimeout(resolve, requestDelay));
     }
 
+    // If caller already aborted, stop early
+    if (signal?.aborted) {
+      const abortErr: any = new Error('Analysis was cancelled');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+
     // Check API connection first
     const isConnected = await testApiConnectivity().catch(() => false);
     if (!isConnected) {
@@ -382,7 +422,16 @@ export const analyzeCarDamageWithAI = async (
     
     // Use retry logic for the API call
     const performAnalysis = async () => {
-      return await unifiedApiService.analyzeDamage(imageFile);
+      // Bail out if aborted between retries
+      if (signal?.aborted) {
+        const abortErr: any = new Error('Analysis was cancelled');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+      }
+      return await unifiedApiService.analyzeDamage(imageFile, {
+        signal,
+        timeoutMs: 90000,
+      });
     };
 
     const data: DamageResult = await retryWithBackoff(performAnalysis);
@@ -391,6 +440,23 @@ export const analyzeCarDamageWithAI = async (
     
     console.log('[damageAnalysisApi] Analysis complete:', data);
     
+    // If backend returned demo mode, attempt a quick self-heal once
+    if ((data as any)?.isDemoMode) {
+      const status = await getAIStatus();
+      const realReady = !!status?.real_ai_available;
+      const modelReady = !!status?.gemini_model_ready;
+      if (realReady && !modelReady) {
+        console.log('[damageAnalysisApi] Demo result received but AI should be available; attempting reload + one retry...');
+        await reloadAI();
+        await new Promise(r => setTimeout(r, 800));
+        const retried: DamageResult = await retryWithBackoff(performAnalysis, 0, 400);
+        if (!(retried as any)?.isDemoMode) {
+          console.log('[damageAnalysisApi] ✅ Reload helped: switching to real AI result');
+          return retried;
+        }
+      }
+    }
+
     return data;
 
   } catch (error) {

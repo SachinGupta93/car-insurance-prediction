@@ -89,7 +89,7 @@ def create_app():
                     params['auth'] = auth_token
                     
                 logger.debug(f"FirebaseRestClient: GET {url}")
-                response = requests.get(url, params=params, timeout=10)
+                response = requests.get(url, params=params, timeout=4)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -113,7 +113,7 @@ def create_app():
                     params['auth'] = auth_token
                     
                 logger.debug(f"FirebaseRestClient: GET ROOT {url}")
-                response = requests.get(url, params=params, timeout=10)
+                response = requests.get(url, params=params, timeout=4)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -138,7 +138,7 @@ def create_app():
                     params['auth'] = auth_token
                     
                 logger.debug(f"FirebaseRestClient: PUT {url}")
-                response = requests.put(url, json=data, params=params, timeout=10)
+                response = requests.put(url, json=data, params=params, timeout=4)
                 
                 if response.status_code == 200:
                     logger.debug(f"FirebaseRestClient: Data set successfully")
@@ -162,7 +162,7 @@ def create_app():
                     params['auth'] = auth_token
                     
                 logger.debug(f"FirebaseRestClient: PATCH {url}")
-                response = requests.patch(url, json=data, params=params, timeout=10)
+                response = requests.patch(url, json=data, params=params, timeout=4)
                 
                 if response.status_code == 200:
                     logger.debug(f"FirebaseRestClient: Data updated successfully")
@@ -186,7 +186,7 @@ def create_app():
                     params['auth'] = auth_token
                     
                 logger.debug(f"FirebaseRestClient: POST {url}")
-                response = requests.post(url, json=data, params=params, timeout=10)
+                response = requests.post(url, json=data, params=params, timeout=4)
                 
                 if response.status_code == 200:
                     result = response.json()

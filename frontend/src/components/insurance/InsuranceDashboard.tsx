@@ -181,25 +181,23 @@ const InsuranceDashboard: React.FC = () => {
         {/* Data Source Indicator */}
         {dataSource && (
           <div className={`mb-6 p-4 rounded-lg border ${
-            dataSource === 'real' 
-              ? 'bg-green-50 border-green-200 text-green-800' 
-              : dataSource === 'sample' 
-              ? 'bg-blue-50 border-blue-200 text-blue-800'
-              : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+            dataSource === 'real'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : dataSource === 'empty'
+              ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+              : 'bg-gray-50 border-gray-200 text-gray-800'
           }`}>
             <div className="flex items-center gap-2">
               {dataSource === 'real' ? (
                 <CheckCircle className="w-5 h-5" />
-              ) : dataSource === 'sample' ? (
-                <Shield className="w-5 h-5" />
               ) : (
                 <AlertCircle className="w-5 h-5" />
               )}
               <span className="font-medium">
-                {dataSource === 'real' ? 'Real Insurance Data' : dataSource === 'sample' ? 'Sample Insurance Data' : 'Fallback Data'}
+                {dataSource === 'real' ? 'Real Insurance Data' : dataSource === 'empty' ? 'No Data Available' : 'Unknown Data Source'}
               </span>
               <span className="text-sm opacity-75">
-                {dataMessage || (dataSource === 'real' ? 'Live insurance data from Firebase' : 'Sample insurance data for demonstration')}
+                {dataMessage || (dataSource === 'real' ? 'Live insurance data from Firebase' : 'No insurance data available')}
               </span>
             </div>
           </div>

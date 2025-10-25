@@ -83,12 +83,14 @@ export class DamageRegionService {
         color: DamageRegionService.getRegionColor(region.severity || 'minor')
       }));
       
-      return regions.length > 0 ? regions : this.generateSampleRegions();
+      const enableSamples = import.meta.env.VITE_ENABLE_SAMPLE_REGIONS === 'true';
+      return regions.length > 0 ? regions : (enableSamples ? this.generateSampleRegions() : []);
+
     } catch (error) {
       console.error('❌ Error analyzing damage regions:', error);
-      console.log('🔄 Falling back to local sample regions');
-      // Return sample regions for demonstration
-      return this.generateSampleRegions();
+      const enableSamples = import.meta.env.VITE_ENABLE_SAMPLE_REGIONS === 'true';
+      return enableSamples ? this.generateSampleRegions() : [];
+
     }
   }
 

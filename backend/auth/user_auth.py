@@ -49,7 +49,7 @@ class UserAuth:
         try:
             session = self._get_authenticated_session(id_token)
             url = f"{self.db_url}/users/{uid}/profile.json"
-            response = session.get(url)
+            response = session.get(url, timeout=7)
             response.raise_for_status()  # Raise an exception for bad status codes
             user_data = response.json()
             if not user_data:
@@ -58,7 +58,27 @@ class UserAuth:
                 return self.get_user_profile(uid, id_token)
             return user_data
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Error getting user profile via REST: {e.response.text}")
+            status = getattr(e.response, 'status_code', None)
+            try:
+                logger.error(f"Error getting user profile via REST: {e.response.text}")
+            except Exception:
+                logger.error("Error getting user profile via REST (no response text)")
+            # Fallback to Admin SDK when token is unauthorized by RTDB rules
+            if status in (401, 403):
+                try:
+                    profile = self.db_ref.child('users').child(uid).child('profile').get(auth_token=id_token)
+                    if not profile:
+                        profile_data = {
+                            'email': 'unknown@example.com',
+                            'name': 'User',
+                            'created_at': datetime.now().isoformat(),
+                            'last_activity': datetime.now().isoformat()
+                        }
+                        self.db_ref.child('users').child(uid).child('profile').set(profile_data, auth_token=id_token)
+                        return profile_data
+                    return profile
+                except Exception as admin_ex:
+                    logger.error(f"Admin fallback failed in get_user_profile: {str(admin_ex)}")
             raise
         except Exception as e:
             logger.error(f"Error getting user profile: {str(e)}")
@@ -69,12 +89,24 @@ class UserAuth:
         try:
             session = self._get_authenticated_session(id_token)
             url = f"{self.db_url}/users/{uid}/profile.json"
-            response = session.put(url, json=data) # Use PUT to create/overwrite
+            response = session.put(url, json=data, timeout=7) # Use PUT to create/overwrite
             response.raise_for_status()
             logger.info(f"Successfully created/updated profile for user {uid}")
             return response.json()
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Error creating user profile via REST: {e.response.text}")
+            status = getattr(e.response, 'status_code', None)
+            try:
+                logger.error(f"Error creating user profile via REST: {e.response.text}")
+            except Exception:
+                logger.error("Error creating user profile via REST (no response text)")
+            if status in (401, 403):
+                # Admin fallback
+                try:
+                    self.db_ref.child('users').child(uid).child('profile').set(data, auth_token=id_token)
+                    logger.info(f"Admin fallback: profile created for user {uid}")
+                    return data
+                except Exception as admin_ex:
+                    logger.error(f"Admin fallback failed in create_user_profile: {str(admin_ex)}")
             raise
         except Exception as e:
             logger.error(f"Error creating user profile: {str(e)}")
@@ -85,15 +117,84 @@ class UserAuth:
         try:
             session = self._get_authenticated_session(id_token)
             url = f"{self.db_url}/users/{uid}/profile.json"
-            response = session.patch(url, json=data) # Use PATCH to update fields
+            response = session.patch(url, json=data, timeout=7) # Use PATCH to update fields
             response.raise_for_status()
             logger.info(f"Successfully updated profile for user {uid}")
             return response.json()
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Error updating user profile via REST: {e.response.text}")
+            status = getattr(e.response, 'status_code', None)
+            try:
+                logger.error(f"Error updating user profile via REST: {e.response.text}")
+            except Exception:
+                logger.error("Error updating user profile via REST (no response text)")
+            if status in (401, 403):
+                try:
+                    # Admin fallback: update the fields
+                    self.db_ref.child('users').child(uid).child('profile').update(data, auth_token=id_token)
+                    logger.info(f"Admin fallback: profile updated for user {uid}")
+                    return data
+                except Exception as admin_ex:
+                    logger.error(f"Admin fallback failed in update_user_profile: {str(admin_ex)}")
             raise
         except Exception as e:
             logger.error(f"Error updating user profile: {str(e)}")
+            raise
+
+    def ensure_user_profile(self, uid, id_token, default_profile=None):
+        """Ensure a user profile exists with a single PUT. Fallback to db_ref on auth errors."""
+        # Build profile payload
+        if default_profile is None:
+            profile_data = {
+                'email': 'unknown@example.com',
+                'name': 'User',
+                'created_at': datetime.now().isoformat(),
+                'last_activity': datetime.now().isoformat()
+            }
+        else:
+            profile_data = dict(default_profile)
+            profile_data['created_at'] = datetime.now().isoformat()
+
+        try:
+            session = self._get_authenticated_session(id_token)
+            url = f"{self.db_url}/users/{uid}/profile.json"
+            # Quick existence check (2s) to avoid overwriting an existing profile
+            try:
+                check_resp = session.get(url, timeout=2)
+                if check_resp.status_code == 200:
+                    try:
+                        existing = check_resp.json()
+                    except Exception:
+                        existing = None
+                    if existing:
+                        logger.info(f"Profile already exists for user {uid}")
+                        return
+            except Exception:
+                # If the existence check fails (e.g., 401), continue to create path
+                pass
+            # Single PUT with shorter timeout to avoid client aborts
+            put_resp = session.put(url, json=profile_data, timeout=4)
+            if put_resp.status_code in (200, 204):
+                logger.info(f"Profile ensured via REST for user {uid}")
+                return
+            put_resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            status = getattr(e.response, 'status_code', None)
+            if status in (401, 403):
+                try:
+                    # Fallback using our REST client with user's token to satisfy RTDB rules
+                    self.db_ref.child('users').child(uid).child('profile').set(profile_data, auth_token=id_token)
+                    logger.info(f"Profile ensured via fallback for user {uid}")
+                    return
+                except Exception as admin_ex:
+                    logger.error(f"Fallback failed in ensure_user_profile: {str(admin_ex)}")
+            # Log any other REST error content if available
+            try:
+                logger.error(f"Error ensuring user profile via REST: {e.response.text}")
+            except Exception:
+                logger.error("Error ensuring user profile via REST (no response text)")
+            raise
+        except Exception as e:
+            logger.error(f"Error ensuring user profile exists: {str(e)}")
             raise
 
     def add_vehicle(self, uid, vehicle_data, id_token):
@@ -184,7 +285,7 @@ class UserAuth:
             url = f"{self.db_url}/users/{uid}/analysisHistory.json"
             analysis_data['created_at'] = datetime.now().isoformat()
 
-            response = session.post(url, json=analysis_data) # POST generates a unique ID
+            response = session.post(url, json=analysis_data, timeout=7) # POST generates a unique ID
             response.raise_for_status()
             
             new_analysis_key = response.json().get('name')
@@ -197,17 +298,40 @@ class UserAuth:
             logger.error(f"Error saving analysis to history: {str(e)}")
             raise
 
-    def get_analysis_history(self, uid, id_token):
-        """Get user's analysis history using authenticated REST call."""
+    def get_analysis_history(self, uid, id_token, limit: int | None = None, order_by: str = 'uploadedAt'):
+        """Get user's analysis history using authenticated REST call with optional server-side limiting.
+
+        Args:
+            uid: Firebase user ID
+            id_token: Firebase ID token
+            limit: When provided, limit to last N items (server-side)
+            order_by: Child key to order by (default 'uploadedAt')
+        """
         try:
             session = self._get_authenticated_session(id_token)
             url = f"{self.db_url}/users/{uid}/analysisHistory.json"
-            response = session.get(url)
+
+            params = {}
+            # Firebase REST API requires JSON-encoded strings for orderBy
+            if limit is not None and isinstance(limit, int) and limit > 0:
+                try:
+                    params = {
+                        'orderBy': f'"{order_by}"',
+                        'limitToLast': limit
+                    }
+                except Exception:
+                    params = {}
+
+            response = session.get(url, params=params, timeout=7)
             response.raise_for_status()
             history = response.json()
             return history if history else {}
         except requests.exceptions.HTTPError as e:
-            logger.error(f"Error getting analysis history via REST: {e.response.text}")
+            # Include response content for debugging when available
+            try:
+                logger.error(f"Error getting analysis history via REST: {e.response.text}")
+            except Exception:
+                logger.error("Error getting analysis history via REST: HTTP error without response text")
             raise
         except Exception as e:
             logger.error(f"Error getting analysis history: {str(e)}")
@@ -430,75 +554,3 @@ class UserAuth:
                 'recentAnalyses': [],
                 'topDamageType': 'N/A'
             }
-
-    def ensure_user_profile(self, uid, id_token, default_profile=None):
-        """Ensure a user profile exists, creating it if necessary, using authenticated REST call."""
-        try:
-            session = self._get_authenticated_session(id_token)
-            url = f"{self.db_url}/users/{uid}/profile.json"
-            response = session.get(url)
-            
-            # Check if profile exists and is not null
-            if response.status_code == 200 and response.content and response.json() is not None:
-                return  # Profile exists
-
-            # Profile does not exist or is null, create it
-            logger.info(f"User profile for {uid} not found, creating one.")
-            
-            if default_profile is None:
-                profile_data = {
-                    'email': 'unknown@example.com',
-                    'name': 'User',
-                    'created_at': datetime.now().isoformat(),
-                    'last_activity': datetime.now().isoformat()
-                }
-            else:
-                profile_data = default_profile
-                profile_data['created_at'] = datetime.now().isoformat()
-
-            # Use PUT to create the profile at the specific path
-            create_response = session.put(url, json=profile_data)
-            create_response.raise_for_status()
-            logger.info(f"Successfully created profile for user {uid}")
-
-        except requests.exceptions.HTTPError as e:
-            # It's possible for a race condition where another process creates the profile
-            # between our GET and PUT. A 400 error with "data already exists" is fine.
-            if e.response.status_code != 400:
-                 logger.error(f"Error ensuring user profile exists via REST: {e.response.text}")
-                 raise
-        except Exception as e:
-            logger.error(f"Error ensuring user profile exists: {str(e)}")
-            raise
-
-    def direct_update_analysis_history(self, uid, data, id_token):
-        """Directly update analysis history for a user (for migration/admin tasks)."""
-        try:
-            session = self._get_authenticated_session(id_token)
-            url = f"{self.db_url}/users/{uid}/analysisHistory.json"
-            response = session.put(url, json=data) # Use PUT to overwrite the whole history
-            response.raise_for_status()
-            logger.info(f"Successfully performed direct update on analysis history for user {uid}")
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"Error in direct update of analysis history via REST: {e.response.text}")
-            raise
-        except Exception as e:
-            logger.error(f"Error in direct update of analysis history: {str(e)}")
-            raise
-
-    def direct_update_user_data(self, uid, path, data, id_token):
-        """Directly update any part of a user's data (for migration/admin tasks)."""
-        try:
-            session = self._get_authenticated_session(id_token)
-            url = f"{self.db_url}/users/{uid}/{path}.json"
-            response = session.put(url, json=data) # Use PUT to overwrite the data at the path
-            response.raise_for_status()
-            logger.info(f"Successfully performed direct update on {path} for user {uid}")
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"Error in direct update of {path} via REST: {e.response.text}")
-            raise
-        except Exception as e:
-            logger.error(f"Error in direct update of {path}: {str(e)}")
-            raise

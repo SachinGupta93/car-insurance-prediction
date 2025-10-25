@@ -1,5 +1,7 @@
 import { rtdb } from '@/lib/firebase';
-import { ref, push, set, get, query, orderByChild, equalTo, remove, update } from 'firebase/database';
+import { ref, push, set, get, query, orderByChild, equalTo, remove, update, limitToLast } from 'firebase/database';
+import { storage } from '@/lib/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
 import { useFirebaseAuth } from '@/context/FirebaseAuthContext';
 import { useCallback, useEffect } from 'react';
 
@@ -61,6 +63,65 @@ class FirebaseDataService {
     this._currentUserId = userId;
   }
 
+  // Convert a data URL to a File
+  private async dataUrlToFile(dataUrl: string, filename = 'image.jpg'): Promise<File> {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const file = new File([blob], filename, { type: blob.type || 'image/jpeg' });
+    return file;
+  }
+
+  /**
+   * Migrate legacy history items that still store base64 `image` in RTDB.
+   * For each item with a large base64 image, upload it to Storage, write minimal fields,
+   * and clear the base64 from RTDB.
+   */
+  async migrateLegacyHistoryEntries(maxToMigrate = 10): Promise<{ migrated: number; skipped: number; errors: number; }>{
+    if (!this.isAuthenticated() || !this.getCurrentUserId()) {
+      throw new Error('User must be authenticated');
+    }
+
+    const uid = this.getCurrentUserId()!;
+    const historyRef = ref(rtdb, `users/${uid}/analysisHistory`);
+    const snapshot = await get(historyRef);
+    if (!snapshot.exists()) return { migrated: 0, skipped: 0, errors: 0 };
+
+    const entries = Object.entries(snapshot.val()) as [string, any][];
+    let migrated = 0, skipped = 0, errors = 0;
+
+    for (const [key, item] of entries) {
+      if (migrated >= maxToMigrate) break;
+
+      const img: string | undefined = item?.image;
+      const hasMinimal = item?.imagePath || item?.thumbnailUrl || item?.imageUrl;
+      if (!img || typeof img !== 'string' || !img.startsWith('data:image') || hasMinimal) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const file = await this.dataUrlToFile(img, item?.filename || 'legacy.jpg');
+        const media = await this.uploadAnalysisMedia(file);
+        const updatePayload: any = {
+          image: '',
+          imagePath: media.imagePath,
+          imageUrl: media.imageUrl,
+          thumbnailPath: media.thumbnailPath,
+          thumbnailUrl: media.thumbnailUrl,
+          migratedAt: new Date().toISOString()
+        };
+        const itemRef = ref(rtdb, `users/${uid}/analysisHistory/${key}`);
+        await update(itemRef, updatePayload);
+        migrated++;
+      } catch (e) {
+        console.error('Migration error for key', key, e);
+        errors++;
+      }
+    }
+
+    return { migrated, skipped, errors };
+  }
+
   // Check if user is authenticated
   isAuthenticated() {
     return this._isAuthenticated;
@@ -69,6 +130,72 @@ class FirebaseDataService {
   // Get current user ID
   getCurrentUserId() {
     return this._currentUserId;
+  }
+
+  // Create a compressed thumbnail Blob from a File
+  private async createThumbnail(file: File, maxWidth = 512, maxHeight = 512, quality = 0.7): Promise<Blob> {
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = dataUrl;
+    });
+
+    // Calculate target dimensions while preserving aspect ratio
+    let { width, height } = img;
+    const ratio = Math.min(maxWidth / width, maxHeight / height, 1);
+    const targetWidth = Math.round(width * ratio);
+    const targetHeight = Math.round(height * ratio);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas not supported');
+    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (!b) return reject(new Error('Failed to create thumbnail blob'));
+        resolve(b);
+      }, 'image/jpeg', quality);
+    });
+    return blob;
+  }
+
+  // Upload original image and thumbnail to Firebase Storage and return minimal references
+  async uploadAnalysisMedia(file: File): Promise<{ imagePath: string; imageUrl: string; thumbnailPath: string; thumbnailUrl: string; }> {
+    if (!this.isAuthenticated() || !this.getCurrentUserId()) {
+      throw new Error('User must be authenticated');
+    }
+
+    const userId = this.getCurrentUserId()!;
+    const timestamp = Date.now();
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const basePath = `users/${userId}/analysis`;
+
+    // Original image upload
+    const imagePath = `${basePath}/images/${timestamp}-${sanitizedName}`;
+    const imageRef = storageRef(storage, imagePath);
+    await uploadBytes(imageRef, file, { contentType: file.type || 'image/jpeg', cacheControl: 'public, max-age=86400' });
+    const imageUrl = await getDownloadURL(imageRef);
+
+    // Thumbnail upload
+    const thumbBlob = await this.createThumbnail(file);
+    const thumbnailPath = `${basePath}/thumbnails/${timestamp}-${sanitizedName}.jpg`;
+    const thumbRef = storageRef(storage, thumbnailPath);
+    await uploadBytes(thumbRef, thumbBlob, { contentType: 'image/jpeg', cacheControl: 'public, max-age=86400' });
+    const thumbnailUrl = await getDownloadURL(thumbRef);
+
+    return { imagePath, imageUrl, thumbnailPath, thumbnailUrl };
   }
 
   // User Profile Management
@@ -128,39 +255,17 @@ class FirebaseDataService {
     const historyRef = ref(rtdb, `users/${userId}/analysisHistory`);
     const newAnalysisRef = push(historyRef);
     
-    
-    // Ensure image is either a valid base64 string or a valid URL (not a blob)
-    let validatedImageUrl = analysisData.image;
-    
-    // If the image is a blob URL, convert it to base64 for storage
-    if (analysisData.image && analysisData.image.startsWith('blob:')) {
-      try {
-        // Convert blob URL to base64
-        const response = await fetch(analysisData.image);
-        const blob = await response.blob();
-        validatedImageUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      } catch (error) {
-        console.error('Error converting blob to base64:', error);
-        validatedImageUrl = ''; // Fallback to empty string
-      }
-    }
-    
-    // If still invalid, use empty string
-    if (!validatedImageUrl || (!validatedImageUrl.startsWith('data:') && !validatedImageUrl.startsWith('http'))) {
-      validatedImageUrl = '';
-    }
+    // Prefer minimal image fields and avoid storing base64 in DB
+    const minimalImageUrl = (analysisData as any).thumbnailUrl || (analysisData as any).imageUrl || '';
 
     const analysisItem: UploadedImage = {
       ...analysisData, // Spread the incoming data first
       id: newAnalysisRef.key!,
       userId,
       uploadedAt: new Date().toISOString(),
-      image: validatedImageUrl, // Overwrite image with validatedImageUrl
+      // Do not persist large base64 strings; keep image empty and rely on imageUrl/thumbnailUrl
+      image: '',
+      imageUrl: minimalImageUrl,
       // result should be part of analysisData and correctly typed
       // damageRegions might be part of analysisData.result.identifiedDamageRegions or analysisData.damageRegions
       // severity might be part of analysisData.result.severity or analysisData.severity
@@ -171,7 +276,7 @@ class FirebaseDataService {
     return newAnalysisRef.key!;
   }
 
-  async getAnalysisHistory(userId?: string): Promise<UploadedImage[]> {
+  async getAnalysisHistory(userId?: string, limit: number = 50): Promise<UploadedImage[]> {
     console.log('📚 FirebaseService: Getting analysis history...', { userId });
     
     const uid = userId || this.getCurrentUserId();
@@ -183,27 +288,68 @@ class FirebaseDataService {
     console.log('👤 FirebaseService: Using user ID:', uid);
 
     const historyRef = ref(rtdb, `users/${uid}/analysisHistory`);
-    const snapshot = await get(historyRef);
+    // Limit results for faster load and reduced memory
+    const q = query(historyRef, orderByChild('uploadedAt'), limitToLast(limit));
+    let snapshot;
+    try {
+      snapshot = await get(q);
+    } catch (err: any) {
+      const msg = (err && err.message) ? err.message.toLowerCase() : '';
+      const indexMissing = msg.includes('index not defined') || msg.includes('indexon') || msg.includes('uploadedat');
+      if (indexMissing) {
+        console.warn('⚠️ Firebase RTDB index for "uploadedAt" is missing. Falling back to unindexed fetch. Add .indexOn ["uploadedAt"] in rules for best performance.');
+        snapshot = await get(historyRef);
+      } else {
+        throw err;
+      }
+    }
     
     if (snapshot.exists()) {
       const data = snapshot.val();
       
-      // Fast conversion - minimal processing
-      const historyArray: UploadedImage[] = Object.entries(data).map(([key, item]: [string, any]) => ({
-        id: key,
-        ...item,
-        // Only set essential fallbacks
-        image: item.image || item.imageUrl || '',
-        damageType: item.result?.damageType || item.damageType || 'Unknown',
-        confidence: item.result?.confidence || item.confidence || 0,
-        severity: item.result?.severity || item.severity || 'moderate',
-        // Keep existing result or create minimal one
-        result: item.result || {
-          damageType: item.damageType || 'Unknown',
-          confidence: item.confidence || 0,
-          severity: item.severity || 'moderate'
+      // Resolve missing URLs from storage paths in parallel
+      const entries = Object.entries(data) as [string, any][];
+      let historyArray: UploadedImage[] = await Promise.all(entries.map(async ([key, item]) => {
+        let thumb = item.thumbnailUrl || '';
+        let imgUrl = item.imageUrl || '';
+        try {
+          if (!thumb && item.thumbnailPath) {
+            thumb = await getDownloadURL(storageRef(storage, item.thumbnailPath));
+          }
+        } catch (e) {
+          // ignore URL fetch errors for thumbnails
         }
+        try {
+          if (!imgUrl && item.imagePath) {
+            imgUrl = await getDownloadURL(storageRef(storage, item.imagePath));
+          }
+        } catch (e) {
+          // ignore URL fetch errors for full image
+        }
+
+        const mapped: UploadedImage = {
+          id: key,
+          ...item,
+          image: thumb || imgUrl || '', // small preview for list
+          imageUrl: imgUrl,
+          thumbnailUrl: thumb,
+          damageType: item.result?.damageType || item.damageType || 'Unknown',
+          confidence: item.result?.confidence || item.confidence || 0,
+          severity: item.result?.severity || item.severity || 'moderate',
+          result: item.result || {
+            damageType: item.damageType || 'Unknown',
+            confidence: item.confidence || 0,
+            severity: item.severity || 'moderate'
+          }
+        };
+        return mapped;
       }));
+      
+      // Sort by uploadedAt/timestamp descending and limit
+      historyArray.sort((a, b) => (b.uploadedAt || b.timestamp || '').localeCompare(a.uploadedAt || a.timestamp || ''));
+      if (limit && historyArray.length > limit) {
+        historyArray = historyArray.slice(0, limit);
+      }
       
       console.log(`✅ FirebaseService: Loaded ${historyArray.length} history items`);
       return historyArray;

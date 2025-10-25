@@ -114,13 +114,13 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
   };
 
   return (
-    <div className="relative bg-gray-100 rounded-lg overflow-hidden" ref={containerRef}>
+    <div className="relative bg-gray-100 rounded-lg overflow-hidden w-full" ref={containerRef}>
       {/* Main Image */}
       <img
         ref={imageRef}
         src={imageUrl}
         alt="Damage Analysis"
-        className="w-full h-auto max-h-96 object-contain"
+        className="w-full h-auto max-h-[70vh] object-contain"
         onLoad={handleImageLoad}
         style={{ display: 'block' }}
       />
@@ -188,7 +188,7 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
             {/* Region Label */}
             {showLabels && (
               <div
-                className="absolute -top-8 left-0 bg-white rounded px-2 py-1 shadow-md text-xs font-medium z-10"
+                className="absolute -top-9 left-0 bg-white rounded px-2.5 py-1.5 shadow-md text-xs font-semibold z-10"
                 style={{
                   backgroundColor: region.color || getSeverityColor(region.severity),
                   color: 'white',
@@ -199,7 +199,7 @@ const DamageRegionsOverlay: React.FC<DamageRegionsOverlayProps> = ({
                   {getSeverityIcon(region.severity)}
                   <span>{region.damageType || 'Unknown'}</span>
                 </div>
-                <div className="text-xs opacity-90">{region.damagePercentage || 0}%</div>
+                <div className="text-xs opacity-95">{region.damagePercentage || 0}%</div>
               </div>
             )}
 
