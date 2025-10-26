@@ -14,7 +14,7 @@ interface ApiResponse<T> {
   error?: string;
 }
 
-class UnifiedApiService {
+export class UnifiedApiService {
   // Simple in-memory caches and in-flight deduplication
   private aggregatedCache: any | null = null;
   private insuranceCache: any | null = null;
@@ -93,12 +93,20 @@ class UnifiedApiService {
     opts?: { signal?: AbortSignal; timeoutMs?: number }
   ): Promise<DamageResult> {
     try {
+      console.log('🚀 [UnifiedAPI.analyzeDamage] Starting damage analysis...');
+      console.log('📁 [UnifiedAPI.analyzeDamage] Image file:', imageFile.name, 'Size:', imageFile.size, 'bytes');
+      
       const formData = new FormData();
       formData.append('image', imageFile);
       
+      console.log('🔑 [UnifiedAPI.analyzeDamage] Getting auth headers...');
       const authHeaders = await this.getAuthHeaders();
+      console.log('✅ [UnifiedAPI.analyzeDamage] Auth headers obtained');
+      
       const formHeaders = { ...authHeaders };
       delete (formHeaders as any)['Content-Type']; // Remove Content-Type for FormData
+      
+      console.log('📤 [UnifiedAPI.analyzeDamage] Prepared headers:', Object.keys(formHeaders));
       
       // Create AbortController for proper timeout handling
       const controller = new AbortController();
@@ -117,12 +125,15 @@ class UnifiedApiService {
       const timeoutMs = Math.max(10000, opts?.timeoutMs ?? 90000); // default 90s for complex analysis
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+      console.log(`🌐 [UnifiedAPI.analyzeDamage] Sending POST to ${API_BASE_URL}/api/analyze-damage (timeout: ${timeoutMs}ms)`);
       const response = await fetch(`${API_BASE_URL}/api/analyze-damage`, {
         method: 'POST',
         headers: formHeaders,
         body: formData,
         signal: controller.signal
       });
+      
+      console.log('📥 [UnifiedAPI.analyzeDamage] Response received, status:', response.status);
 
       clearTimeout(timeoutId);
 

@@ -199,6 +199,12 @@ import math
 from datetime import datetime
 import hashlib
 from PIL import Image
+
+# Debug: Confirm module is being loaded
+print("=" * 80)
+print("🔍 [DEBUG] damage_analysis_routes.py is being imported!")
+print("=" * 80)
+
 from rag_implementation.car_damage_rag import CarDamageRAG
 from .auth_routes import firebase_auth_required
 from auth.user_auth import UserAuth
@@ -209,16 +215,35 @@ from api_key_manager import api_key_manager
 logger = logging.getLogger(__name__)
 damage_routes = Blueprint('damage_routes', __name__)
 
-# Initialize RAG components
-try:
-    car_damage_rag = CarDamageRAG()
-    logger.info("CarDamageRAG initialized successfully")
-    # Update analysis mode manager with real AI availability
-    analysis_mode_manager.set_real_ai_availability(car_damage_rag.model is not None)
-except Exception as e:
-    logger.error(f"Failed to initialize CarDamageRAG: {str(e)}")
-    car_damage_rag = None
-    analysis_mode_manager.set_real_ai_availability(False)
+# Lazy initialization - will be set on first use
+car_damage_rag = None
+_initialization_attempted = False
+_initialization_error = None
+
+def _ensure_car_damage_rag():
+    """Lazy initialization of CarDamageRAG - called on first use"""
+    global car_damage_rag, _initialization_attempted, _initialization_error
+    
+    if _initialization_attempted:
+        return car_damage_rag
+    
+    _initialization_attempted = True
+    try:
+        logger.info("🔄 Lazy-loading CarDamageRAG...")
+        car_damage_rag = CarDamageRAG()
+        logger.info("✅ CarDamageRAG initialized successfully")
+        logger.info(f"   - Model available: {car_damage_rag.model is not None}")
+        logger.info(f"   - Model type: {type(car_damage_rag.model).__name__ if car_damage_rag.model else 'None'}")
+        analysis_mode_manager.set_real_ai_availability(car_damage_rag.model is not None)
+        return car_damage_rag
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize CarDamageRAG: {str(e)}")
+        logger.error(f"   - Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"   - Traceback:\n{traceback.format_exc()}")
+        _initialization_error = e
+        analysis_mode_manager.set_real_ai_availability(False)
+        return None
 
 # ---- Lightweight AI admin utilities (dev-friendly) ----
 @damage_routes.route('/ai/status', methods=['GET'])
@@ -432,7 +457,10 @@ def upload_image():
 @firebase_auth_required
 def analyze_damage_upload():
     """Analyze car damage from uploaded image file using Gemini Vision AI"""
-    logger.info("Starting damage analysis from file upload")
+    logger.info("🚀 Starting damage analysis from file upload")
+    
+    # Ensure CarDamageRAG is initialized (lazy loading)
+    _ensure_car_damage_rag()
     
     try:
         if 'image' not in request.files:

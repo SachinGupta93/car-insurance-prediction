@@ -79,46 +79,46 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 relative overflow-hidden">
-      {/* Background */}      <div className="absolute inset-0 bg-white">
-        <div className="absolute inset-0 bg-rose-200/20"></div>
-        <div className="absolute inset-0 bg-grid-pattern opacity-10"></div>
-        
-        {/* Floating Shapes */}        <div className="absolute top-20 left-10 w-32 h-32 bg-rose-200 rounded-full filter blur-2xl opacity-30 animate-pulse"></div>
-        <div className="absolute bottom-32 right-16 w-48 h-48 bg-rose-200/50 rounded-full filter blur-3xl opacity-25 animate-pulse" style={{animationDelay: '2s'}}></div>
-        <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-rose-200 rounded-full filter blur-xl opacity-20 animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="absolute bottom-20 left-20 w-40 h-40 bg-rose-200/50 rounded-full filter blur-2xl opacity-15 animate-pulse" style={{animationDelay: '3s'}}></div>
+    <div className="min-h-screen flex items-center justify-center py-12 px-4 relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-gradient-to-br from-blue-400/20 to-indigo-500/20 rounded-full filter blur-3xl opacity-50 animate-pulse"></div>
+        <div className="absolute bottom-32 right-16 w-96 h-96 bg-gradient-to-br from-purple-400/20 to-pink-500/20 rounded-full filter blur-3xl opacity-40 animate-pulse" style={{animationDelay: '2s'}}></div>
+        <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-gradient-to-br from-cyan-400/20 to-blue-500/20 rounded-full filter blur-3xl opacity-30 animate-pulse" style={{animationDelay: '1s'}}></div>
+        <div className="absolute bottom-20 left-20 w-80 h-80 bg-gradient-to-br from-indigo-400/20 to-purple-500/20 rounded-full filter blur-3xl opacity-35 animate-pulse" style={{animationDelay: '3s'}}></div>
       </div>
       
       <div className="relative z-10 max-w-md w-full">
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 space-y-8 shadow-xl border border-rose-200/30">
+        <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 space-y-6 shadow-2xl shadow-slate-900/10 border border-white/50">
           <div className="text-center">
             <div className="flex justify-center mb-6">
-              <div className="w-16 h-16 bg-emerald-200 rounded-2xl flex items-center justify-center">
-                <svg className="w-8 h-8 text-black" fill="currentColor" viewBox="0 0 24 24">
+              <div className="relative w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-blue-500/30">
+                <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-3xl"></div>
+                <svg className="w-10 h-10 text-white relative z-10" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.22.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
                 </svg>
               </div>
             </div>
-            <h2 className="text-3xl font-bold text-black mb-2">
+            <h2 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent mb-2">
               {isSignup ? 'Join CarGuard AI' : 'Welcome Back'}
             </h2>
-            <p className="text-gray-600">
+            <p className="text-slate-600 font-medium">
               {isSignup 
-                ? 'Create your CarGuard AI account' 
-                : 'Sign in to your CarGuard AI account'
+                ? 'Create your account and get started' 
+                : 'Sign in to continue your journey'
               }
             </p>
           </div>
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div>
-                <label htmlFor="email-address" className="block text-sm font-medium text-black mb-1">
+                <label htmlFor="email-address" className="block text-sm font-semibold text-slate-700 mb-2">
                   Email Address
-                </label>                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
                     </svg>
                   </div>
@@ -128,7 +128,7 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
                     type="email"
                     autoComplete="email"
                     required
-                    className="block w-full pl-10 pr-3 py-2 border border-rose-200/30 rounded-lg bg-white/10 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-transparent"
+                    className="block w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-2xl bg-white/70 backdrop-blur-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 hover:border-slate-300"
                     placeholder={isSignup ? "Enter your email address" : "Enter your email"}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -138,11 +138,12 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-black mb-1">
+                <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-2">
                   Password
-                </label>                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                   </div>
@@ -152,7 +153,7 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
                     type="password"
                     autoComplete={isSignup ? "new-password" : "current-password"}
                     required
-                    className="block w-full pl-10 pr-3 py-2 border border-rose-200/30 rounded-lg bg-white/10 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-transparent"
+                    className="block w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-2xl bg-white/70 backdrop-blur-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 hover:border-slate-300"
                     placeholder={isSignup ? "Create a strong password" : "Enter your password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -163,11 +164,12 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
 
               {isSignup && (
                 <div>
-                  <label htmlFor="confirm-password" className="block text-sm font-medium text-black mb-1">
+                  <label htmlFor="confirm-password" className="block text-sm font-semibold text-slate-700 mb-2">
                     Confirm Password
-                  </label>                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
@@ -177,7 +179,7 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
                       type="password"
                       autoComplete="new-password"
                       required
-                      className="block w-full pl-10 pr-3 py-2 border border-rose-200/30 rounded-lg bg-white/10 text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-transparent"
+                      className="block w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-2xl bg-white/70 backdrop-blur-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all duration-200 hover:border-slate-300"
                       placeholder="Confirm your password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
@@ -189,12 +191,12 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
             </div>
 
             {error && (
-              <div className="bg-red-200/20 border border-red-300/30 rounded-lg p-4">
+              <div className="rounded-2xl bg-red-50 border border-red-200 p-4 shadow-sm">
                 <div className="flex items-center">
-                  <svg className="w-5 h-5 mr-3 text-red-300" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-5 h-5 mr-3 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
-                  <p className="text-sm font-medium text-red-200">{error}</p>
+                  <p className="text-sm font-medium text-red-600">{error}</p>
                 </div>
               </div>
             )}
@@ -202,12 +204,12 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-emerald-200 text-black rounded-lg hover:bg-emerald-300 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-semibold rounded-2xl text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 hover:-translate-y-0.5"
             >
               <span className="relative z-10 flex items-center justify-center">
                 {loading ? (
                   <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-black border-t-transparent mr-3"></div>
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-3"></div>
                     {isSignup ? 'Creating account...' : 'Signing in...'}
                   </>
                 ) : (
@@ -225,21 +227,21 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
               </span>
             </button>
 
-            {/* Divider */}            <div className="relative">
+            {/* Divider */}
+            <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-rose-200/30"></div>
+                <div className="w-full border-t border-slate-200/50"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white/10 text-gray-600">Or continue with</span>
+                <span className="px-3 bg-white/70 backdrop-blur-sm text-slate-600 font-medium">Or continue with</span>
               </div>
             </div>
-
             {/* Google Auth Button */}
             <button
               type="button"
               onClick={handleGoogleAuth}
               disabled={loading}
-              className="w-full px-4 py-2 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-3.5 px-4 border-2 border-slate-200 text-sm font-semibold rounded-2xl text-slate-700 bg-white hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md"
             >
               <div className="flex items-center justify-center">
                 <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -252,19 +254,19 @@ const AuthForms: React.FC<AuthFormsProps> = ({ mode }) => {
               </div>
             </button>
           </form>
-            <div className="text-center">
-            <p className="text-gray-600 text-sm">
+          <div className="text-center">
+            <p className="text-slate-600 text-sm">
               {isSignup ? (
                 <>
                   Already have an account?{' '}
-                  <Link to="/login" className="text-emerald-600 hover:text-emerald-700 font-medium">
+                  <Link to="/login" className="text-blue-600 hover:text-indigo-700 font-semibold transition-colors">
                     Sign in
                   </Link>
                 </>
               ) : (
                 <>
                   Don't have an account?{' '}
-                  <Link to="/signup" className="text-emerald-600 hover:text-emerald-700 font-medium">
+                  <Link to="/signup" className="text-blue-600 hover:text-indigo-700 font-semibold transition-colors">
                     Sign up
                   </Link>
                 </>

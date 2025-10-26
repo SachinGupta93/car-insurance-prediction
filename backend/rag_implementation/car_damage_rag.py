@@ -314,25 +314,44 @@ class CarDamageRAG:
         last_err: Optional[Exception] = None
         for attempt in range(3):
             try:
+                logger.info(f"🔄 Calling Gemini API (attempt {attempt + 1}/3)...")
                 response = self.model.generate_content(
                     contents=contents,
                     generation_config=generation_config,
                     safety_settings=safety_settings,
+                    request_options={"timeout": 60.0}  # 60 second timeout
                 )
+                logger.info("✅ Gemini API call successful")
                 api_key_manager.record_successful_request()
-                return response.text or ""
+                response_text = response.text or ""
+                if response_text:
+                    logger.info(f"📝 Received response ({len(response_text)} chars)")
+                    return response_text
+                else:
+                    logger.warning("⚠️ Gemini returned empty response")
+                    if attempt < 2:
+                        continue
+                    raise RuntimeError("Gemini returned empty response after 3 attempts")
             except Exception as e:
                 last_err = e
+                logger.error(f"❌ Gemini API error (attempt {attempt + 1}/3): {str(e)}")
                 msg = str(e).lower()
                 quota = any(k in msg for k in ["quota", "429", "rate limit", "resource exhausted"])
                 notfound = any(k in msg for k in ["not found", "was not found", "unsupported", "does not have access"])  # model name access
-                if (quota or notfound) and attempt < 2:
+                timeout = any(k in msg for k in ["timeout", "timed out", "deadline exceeded"])
+                
+                if (quota or notfound or timeout) and attempt < 2:
                     if quota:
+                        logger.warning("⚠️ Quota exceeded, rotating API key...")
                         api_key_manager.record_quota_exceeded()
                         new_key = api_key_manager.get_current_key()
                         if new_key:
                             genai.configure(api_key=new_key)
+                    if timeout:
+                        logger.warning("⚠️ Request timed out, retrying...")
                     # Try switching to a broadly accessible model on NotFound
+                    if notfound:
+                        logger.warning("⚠️ Model not found, switching to alternative...")
                     try_models = [
                         "gemini-1.5-flash-8b",
                         "gemini-1.5-flash-latest",
@@ -342,7 +361,7 @@ class CarDamageRAG:
                     for m in try_models:
                         try:
                             self.model = genai.GenerativeModel(m)
-                            logger.info(f"Switched Gemini model to: {m}")
+                            logger.info(f"✅ Switched Gemini model to: {m}")
                             break
                         except Exception:
                             continue
@@ -350,7 +369,10 @@ class CarDamageRAG:
                 api_key_manager.record_error(f"analysis_error_{attempt}")
                 break
         if last_err:
-            raise last_err
+            logger.error(f"💥 All Gemini API attempts failed: {str(last_err)}")
+            logger.error(f"Error type: {type(last_err).__name__}")
+            raise RuntimeError(f"Gemini API failed after 3 attempts: {str(last_err)}") from last_err
+        logger.warning("⚠️ Gemini API returned empty response")
         return ""
 
     @staticmethod
