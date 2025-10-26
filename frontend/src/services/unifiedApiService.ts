@@ -20,6 +20,51 @@ export class UnifiedApiService {
   private insuranceCache: any | null = null;
   private inflightAggregated: Promise<any> | null = null;
   private inflightInsurance: Promise<any> | null = null;
+  // In-memory caches for user-scoped data
+  private userHistoryCache: { data: any; ts: number } | null = null;
+  private userDashboardCache: { data: any; ts: number } | null = null;
+
+  // Helpers for localStorage caching with TTL
+  private async getUserScopedCacheKey(base: string): Promise<string> {
+    try {
+      const { auth } = await import('@/lib/firebase');
+      const uid = auth.currentUser?.uid || 'guest';
+      return `${base}:${uid}`;
+    } catch {
+      return `${base}:guest`;
+    }
+  }
+
+  private readLocalCache<T>(key: string, ttlMs: number): T | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (!parsed.ts || Date.now() - parsed.ts > ttlMs) return null;
+      return parsed.data as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeLocalCache<T>(key: string, data: T): void {
+    try {
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+    } catch {
+      // ignore quota errors
+    }
+  }
+  private async invalidateUserCaches(): Promise<void> {
+    try {
+      const historyKey = await this.getUserScopedCacheKey('history');
+      const dashboardKey = await this.getUserScopedCacheKey('dashboard');
+      localStorage.removeItem(historyKey);
+      localStorage.removeItem(dashboardKey);
+    } catch {}
+    this.userHistoryCache = null;
+    this.userDashboardCache = null;
+  }
   private async getAuthHeaders(): Promise<HeadersInit> {
     console.log('🔑 [UnifiedAPI] Getting auth headers...');
     
@@ -236,8 +281,20 @@ export class UnifiedApiService {
    */
   async getUserHistory(): Promise<UploadedImage[]> {
     console.log('📚 [UnifiedAPI] Getting user history...');
-    
     try {
+      // Attempt cache first (5 minutes TTL)
+      const cacheKey = await this.getUserScopedCacheKey('history');
+      const localCached = this.readLocalCache<UploadedImage[]>(cacheKey, 5 * 60 * 1000);
+      if (localCached && Array.isArray(localCached) && localCached.length) {
+        console.log('🗂️ [UnifiedAPI] Returning history from local cache');
+        this.userHistoryCache = { data: localCached, ts: Date.now() };
+        return localCached;
+      }
+      if (this.userHistoryCache && Date.now() - this.userHistoryCache.ts < 60 * 1000) {
+        console.log('🧠 [UnifiedAPI] Returning history from memory cache');
+        return this.userHistoryCache.data as UploadedImage[];
+      }
+
       const headers = await this.getAuthHeaders();
       const limit = 50;
       console.log('🌐 [UnifiedAPI] Making request to:', `${API_BASE_URL}/api/analysis/history?limit=${limit}`);
@@ -269,6 +326,9 @@ export class UnifiedApiService {
       
       if (Array.isArray(historyData)) {
         console.log('✅ [UnifiedAPI] Returning array data:', historyData.length + ' items');
+        // cache
+        this.userHistoryCache = { data: historyData, ts: Date.now() };
+        this.writeLocalCache(cacheKey, historyData);
         return historyData;
       } else if (historyData && typeof historyData === 'object') {
         // Convert Firebase-style object to array
@@ -277,6 +337,8 @@ export class UnifiedApiService {
           ...item as any
         }));
         console.log('✅ [UnifiedAPI] Converted object to array:', convertedData.length + ' items');
+        this.userHistoryCache = { data: convertedData, ts: Date.now() };
+        this.writeLocalCache(cacheKey, convertedData);
         return convertedData;
       }
       
@@ -338,6 +400,8 @@ export class UnifiedApiService {
       }
 
       const data = await response.json();
+      // Invalidate caches so history/dashboard reflects the new item immediately
+      this.invalidateUserCaches();
       return data.id || data.data?.id || 'unknown';
     } catch (error) {
       console.error('Error adding analysis to history:', error);
@@ -437,6 +501,19 @@ export class UnifiedApiService {
    */
   async getDashboardData(): Promise<any> {
     try {
+      // Cache first (2 minutes TTL)
+      const cacheKey = await this.getUserScopedCacheKey('dashboard');
+      const localCached = this.readLocalCache<any>(cacheKey, 2 * 60 * 1000);
+      if (localCached) {
+        console.log('🗂️ [UnifiedAPI] Returning dashboard from local cache');
+        this.userDashboardCache = { data: localCached, ts: Date.now() };
+        return localCached;
+      }
+      if (this.userDashboardCache && Date.now() - this.userDashboardCache.ts < 60 * 1000) {
+        console.log('🧠 [UnifiedAPI] Returning dashboard from memory cache');
+        return this.userDashboardCache.data;
+      }
+
       const headers = await this.getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/user/dashboard-data`, {
         method: 'GET',
@@ -449,7 +526,10 @@ export class UnifiedApiService {
       }
 
       const data = await response.json();
-      return data.data || data;
+      const payload = data.data || data;
+      this.userDashboardCache = { data: payload, ts: Date.now() };
+      this.writeLocalCache(cacheKey, payload);
+      return payload;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       throw error;

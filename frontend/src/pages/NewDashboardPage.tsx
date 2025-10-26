@@ -69,7 +69,21 @@ const NewDashboardPage: React.FC = () => {
           unifiedApiService.getUserHistory().catch(() => [])
         ]);
 
-        const items: any[] = Array.isArray(history) ? history : [];
+        const itemsAll: any[] = Array.isArray(history) ? history : [];
+
+        // Apply time-range filter locally
+        const now = Date.now();
+        const ranges: Record<string, number> = {
+          '24h': 24 * 60 * 60 * 1000,
+          '7d': 7 * 24 * 60 * 60 * 1000,
+          '30d': 30 * 24 * 60 * 60 * 1000,
+          '90d': 90 * 24 * 60 * 60 * 1000
+        };
+        const windowMs = ranges[timeRange] ?? ranges['7d'];
+        const items = itemsAll.filter((it) => {
+          const t = new Date(it.uploadedAt || it.timestamp || it.analysisDate || Date.now()).getTime();
+          return now - t <= windowMs;
+        });
 
         // Recent analyses (latest 5)
         const recent = items
@@ -99,15 +113,14 @@ const NewDashboardPage: React.FC = () => {
         const typesArr = Array.from(typeMap.entries()).slice(0, 6).map(([name, value], i) => ({ name, value, color: palette[i % palette.length] }));
         setDamageTypeData(typesArr);
 
-        // Trend (last 7 days)
+        // Trend (respect selected range)
         const dayMap = new Map<string, number>();
         items.forEach((it) => {
           const d = new Date(it.uploadedAt || it.timestamp || new Date());
           const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           dayMap.set(key, (dayMap.get(key) || 0) + 1);
         });
-        const trendArr = Array.from(dayMap.entries()).map(([date, count]) => ({ date, analyses: count }))
-          .slice(-7);
+        const trendArr = Array.from(dayMap.entries()).map(([date, count]) => ({ date, analyses: count }));
         setTrendData(trendArr);
 
         // Severity
@@ -161,7 +174,7 @@ const NewDashboardPage: React.FC = () => {
       }
     };
     load();
-  }, []);
+  }, [timeRange]);
 
   if (loading) {
     return (

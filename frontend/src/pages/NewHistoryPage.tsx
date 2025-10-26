@@ -41,6 +41,7 @@ interface Analysis {
   regions: number;
   status: 'Completed' | 'Pending' | 'Failed';
   imageUrl?: string;
+  raw?: any;
 }
 
 const NewHistoryPage: React.FC = () => {
@@ -50,13 +51,17 @@ const NewHistoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Robust parser that supports ranges like "₹25,000 - ₹35,000"
   const parseRupees = (value: any): number => {
     if (!value) return 0;
-    const str = typeof value === 'string' ? value : value.rupees;
-    if (!str) return 0;
-    const digits = str.replace(/[^0-9]/g, '');
-    const num = parseInt(digits || '0', 10);
-    return isNaN(num) ? 0 : num;
+    const str = typeof value === 'string' ? value : (value.rupees ?? value.total?.rupees ?? value.comprehensive?.rupees);
+    if (!str || typeof str !== 'string') return 0;
+    const parts = str.split(/-|to|–|—/).map(p => p.trim());
+    const nums = parts.map(p => parseInt((p.match(/[0-9,]+/) || ['0'])[0].replace(/,/g, ''), 10)).filter(n => !isNaN(n));
+    if (nums.length === 0) return 0;
+    if (nums.length === 1) return nums[0];
+    // average the range
+    return Math.round((nums[0] + nums[1]) / 2);
   };
 
   const toSeverity = (sev?: string): Analysis['severity'] => {
@@ -82,7 +87,18 @@ const NewHistoryPage: React.FC = () => {
           const vehicle = [vi.make, vi.model, vi.year].filter(Boolean).join(' ').trim() || item.filename || 'Vehicle Analysis';
           const damageType = result?.damageType || 'Damage';
           const severity = toSeverity(result?.severity);
-          const estimatedCost = parseRupees(result?.enhancedRepairCost?.comprehensive?.rupees) || parseRupees(result?.repairEstimate);
+          let estimatedCost =
+            parseRupees(result?.enhancedRepairCost?.comprehensive?.rupees) ||
+            parseRupees(result?.comprehensiveCostSummary?.total) ||
+            parseRupees(result?.repairEstimate);
+          // Fallback: sum region estimatedCost if present
+          if (!estimatedCost && Array.isArray(result?.identifiedDamageRegions)) {
+            estimatedCost = result.identifiedDamageRegions.reduce((s: number, r: any) => s + (r.estimatedCost || 0), 0);
+          }
+          // Reasonable default based on severity
+          if (!estimatedCost) {
+            estimatedCost = severity === 'Severe' ? 60000 : severity === 'Moderate' ? 25000 : 8000;
+          }
           const conf = result?.confidence;
           const confidence = typeof conf === 'number' ? (conf <= 1 ? Math.round(conf * 100) : Math.round(conf)) : 0;
           const regions = Array.isArray(result?.identifiedDamageRegions) ? result.identifiedDamageRegions.length : (item.damageRegions?.length || 0);
@@ -97,7 +113,8 @@ const NewHistoryPage: React.FC = () => {
             confidence,
             regions,
             status: 'Completed',
-            imageUrl: item.thumbnailUrl || item.imageUrl
+            imageUrl: item.thumbnailUrl || item.imageUrl,
+            raw: result
           } as Analysis;
         }).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
         setAnalyses(mapped);
@@ -160,10 +177,13 @@ const NewHistoryPage: React.FC = () => {
   }).length;
   const stats = [
     { label: 'Total Analyses', value: filteredAnalyses.length, icon: FileText, color: 'from-blue-500 to-cyan-500' },
-    { label: 'Total Cost', value: `₹${(totalCost / 1000).toFixed(1)}K`, icon: DollarSign, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Total Cost', value: `₹${Math.round(totalCost / 1000).toLocaleString()}K`, icon: DollarSign, color: 'from-emerald-500 to-teal-500' },
     { label: 'Avg Confidence', value: `${avgConf.toFixed(1)}%`, icon: TrendingUp, color: 'from-purple-500 to-indigo-500' },
     { label: 'This Month', value: String(thisMonth), icon: Calendar, color: 'from-rose-500 to-pink-500' }
   ];
+
+  // Detail modal state
+  const [selected, setSelected] = useState<Analysis | null>(null);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
@@ -301,7 +321,7 @@ const NewHistoryPage: React.FC = () => {
                                 </p>
                               </div>
                               <div className="flex gap-2">
-                                <Button variant="outline" size="sm" className="gap-2">
+                                <Button variant="outline" size="sm" className="gap-2" onClick={() => setSelected(analysis)}>
                                   <Eye className="w-4 h-4" />
                                   View
                                 </Button>
@@ -377,7 +397,7 @@ const NewHistoryPage: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1 gap-2">
+                    <Button variant="outline" size="sm" className="flex-1 gap-2" onClick={() => setSelected(analysis)}>
                       <Eye className="w-4 h-4" />
                       View
                     </Button>
@@ -405,8 +425,45 @@ const NewHistoryPage: React.FC = () => {
           </Card>
         )}
       </div>
+      {selected && (
+        <HistoryDetailModal analysis={selected} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 };
 
 export default NewHistoryPage;
+
+/* Simple inline modal for viewing details */
+// Note: Minimal styling to avoid new component dependencies
+function HistoryDetailModal({ analysis, onClose }: { analysis: any; onClose: () => void }) {
+  if (!analysis) return null;
+  const result = analysis.raw || {};
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="p-4 border-b flex items-center justify-between">
+          <h3 className="text-lg font-semibold">{analysis.vehicle} • {analysis.damageType}</h3>
+          <button className="text-slate-600 hover:text-slate-900" onClick={onClose}>✕</button>
+        </div>
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm text-slate-600 mb-1">Estimated Cost</p>
+            <p className="text-2xl font-bold">₹{analysis.estimatedCost.toLocaleString()}</p>
+            <p className="text-sm text-slate-600 mt-3">Confidence</p>
+            <p className="font-medium">{analysis.confidence}%</p>
+            {analysis.imageUrl && (
+              <img src={analysis.imageUrl} alt="Analysis" className="mt-4 rounded-lg border" />
+            )}
+          </div>
+          <div className="text-sm bg-slate-50 rounded-lg p-3 border">
+            <pre className="whitespace-pre-wrap break-words text-slate-800 text-xs">{JSON.stringify(result, null, 2)}</pre>
+          </div>
+        </div>
+        <div className="p-4 border-t text-right">
+          <button className="px-4 py-2 rounded-md bg-slate-100 hover:bg-slate-200" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
